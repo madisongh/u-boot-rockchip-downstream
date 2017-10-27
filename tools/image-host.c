@@ -170,7 +170,7 @@ static int fit_image_setup_sig(struct image_sign_info *info,
 	info->keyname = fdt_getprop(fit, noffset, "key-name-hint", NULL);
 	info->fit = fit;
 	info->node_offset = noffset;
-	info->name = algo_name;
+	info->name = strdup(algo_name);
 	info->checksum = image_get_checksum_algo(algo_name);
 	info->crypto = image_get_crypto_algo(algo_name);
 	info->padding = image_get_padding_algo(padding_name);
