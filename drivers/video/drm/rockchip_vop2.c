@@ -186,7 +186,10 @@
 #define OUT_MODE_SHIFT				0
 #define DATA_SWAP_MASK				0x1f
 #define DATA_SWAP_SHIFT				8
-#define DSP_RB_SWAP				2
+#define DSP_BG_SWAP				0x1
+#define DSP_RB_SWAP				0x2
+#define DSP_RG_SWAP				0x4
+#define DSP_DELTA_SWAP				0x8
 #define CORE_DCLK_DIV_EN_SHIFT			4
 #define P2I_EN_SHIFT				5
 #define DSP_FILED_POL				6
@@ -2185,14 +2188,7 @@ static int rockchip_vop2_init(struct display_state *state)
 	    !(cstate->feature & VOP_FEATURE_OUTPUT_10BIT))
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_P888;
 
-	if (is_uv_swap(conn_state->bus_format, conn_state->output_mode))
-		vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset,
-				DATA_SWAP_MASK, DATA_SWAP_SHIFT, DSP_RB_SWAP,
-				false);
-	else
-		vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset,
-				DATA_SWAP_MASK, DATA_SWAP_SHIFT, 0,
-				false);
+	vop2_post_color_swap(state);
 
 	vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset, OUT_MODE_MASK,
 			OUT_MODE_SHIFT, conn_state->output_mode, false);
