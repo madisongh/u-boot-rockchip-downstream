@@ -1079,9 +1079,9 @@ static ulong rk3588_dclk_vop_set_clk(struct rk3588_clk_priv *priv,
 		conid = 113;
 		con = readl(&cru->clksel_con[113]);
 		sel = (con & DCLK3_VOP_SRC_SEL_MASK) >> DCLK3_VOP_SRC_SEL_SHIFT;
-		mask = DCLK2_VOP_SRC_SEL_MASK | DCLK2_VOP_SRC_DIV_MASK;
-		div_shift = DCLK2_VOP_SRC_DIV_SHIFT;
-		sel_shift = DCLK1_VOP_SRC_SEL_SHIFT;
+		mask = DCLK3_VOP_SRC_SEL_MASK | DCLK3_VOP_SRC_DIV_MASK;
+		div_shift = DCLK3_VOP_SRC_DIV_SHIFT;
+		sel_shift = DCLK3_VOP_SRC_SEL_SHIFT;
 		break;
 	default:
 		return -ENOENT;
@@ -1126,7 +1126,11 @@ static ulong rk3588_dclk_vop_set_clk(struct rk3588_clk_priv *priv,
 			}
 			debug("p_rate=%lu, best_rate=%lu, div=%u, sel=%u\n",
 			      pll_rate, best_rate, best_div, best_sel);
+			printf("[list]p_rate=%lu, best_rate=%lu, div=%u, sel=%u\n",
+			      pll_rate, best_rate, best_div, best_sel);
 		}
+		printf("[result]p_rate=%lu, best_rate=%lu, div=%u, sel=%u\n",
+					      pll_rate, best_rate, best_div, best_sel);
 
 		if (best_rate) {
 			rk_clrsetreg(&cru->clksel_con[conid],
