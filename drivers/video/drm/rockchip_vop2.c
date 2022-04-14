@@ -313,6 +313,12 @@
 #define RK3568_CLUSTER0_WIN0_CTRL1		0x1004
 #define CLUSTER_YRGB_GT2_SHIFT			28
 #define CLUSTER_YRGB_GT4_SHIFT			29
+#define RK3568_CLUSTER0_WIN0_CTRL2		0x1008
+#define CLUSTER_AXI_YRGB_ID_MASK		0x1f
+#define CLUSTER_AXI_YRGB_ID_SHIFT		0
+#define CLUSTER_AXI_UV_ID_MASK			0x1f
+#define CLUSTER_AXI_UV_ID_SHIFT			5
+
 #define RK3568_CLUSTER0_WIN0_YRGB_MST		0x1010
 #define RK3568_CLUSTER0_WIN0_CBR_MST		0x1014
 #define RK3568_CLUSTER0_WIN0_VIR		0x1018
@@ -347,6 +353,8 @@
 
 #define RK3568_CLUSTER0_CTRL			0x1100
 #define CLUSTER_EN_SHIFT			0
+#define CLUSTER_AXI_ID_MASK			0x1
+#define CLUSTER_AXI_ID_SHIFT			13
 
 #define RK3568_CLUSTER1_WIN0_CTRL0		0x1200
 #define RK3568_CLUSTER1_WIN0_CTRL1		0x1204
@@ -391,7 +399,16 @@
 #define CSC_MODE_MASK				0x3
 
 #define RK3568_ESMART0_CTRL1			0x1804
+#define ESMART_AXI_YRGB_ID_MASK			0x1f
+#define ESMART_AXI_YRGB_ID_SHIFT		4
+#define ESMART_AXI_UV_ID_MASK			0x1f
+#define ESMART_AXI_UV_ID_SHIFT			12
 #define YMIRROR_EN_SHIFT			31
+
+#define RK3568_ESMART0_AXI_CTRL			0x1808
+#define ESMART_AXI_ID_MASK			0x1
+#define ESMART_AXI_ID_SHIFT			1
+
 #define RK3568_ESMART0_REGION0_CTRL		0x1810
 #define REGION0_RB_SWAP_SHIFT			14
 #define WIN_EN_SHIFT				0
@@ -727,6 +744,7 @@ struct vop2_layer {
 };
 
 struct vop2_power_domain_data {
+	bool is_enabled;
 	bool is_parent_needed;
 	u8 pd_en_shift;
 	u8 pd_status_shift;
@@ -741,6 +759,9 @@ struct vop2_win_data {
 	enum vop2_layer_type type;
 	u8 win_sel_port_offset;
 	u8 layer_sel_win_id;
+	u8 axi_id;
+	u8 axi_uv_id;
+	u8 axi_yrgb_id;
 	u32 reg_offset;
 	struct vop2_power_domain_data *pd_data;
 };
@@ -1079,10 +1100,14 @@ static bool is_uv_swap(u32 bus_format, u32 output_mode)
 	 *
 	 * From H/W testing, YUV444 mode need a rb swap.
 	 */
-	if ((bus_format == MEDIA_BUS_FMT_YUV8_1X24 ||
+	if (bus_format == MEDIA_BUS_FMT_YVYU8_1X16 ||
+	    bus_format == MEDIA_BUS_FMT_VYUY8_1X16 ||
+	    bus_format == MEDIA_BUS_FMT_YVYU8_2X8 ||
+	    bus_format == MEDIA_BUS_FMT_VYUY8_2X8 ||
+	    ((bus_format == MEDIA_BUS_FMT_YUV8_1X24 ||
 	     bus_format == MEDIA_BUS_FMT_YUV10_1X30) &&
 	    (output_mode == ROCKCHIP_OUT_MODE_AAAA ||
-	     output_mode == ROCKCHIP_OUT_MODE_P888))
+	     output_mode == ROCKCHIP_OUT_MODE_P888)))
 		return true;
 	else
 		return false;
@@ -1386,6 +1411,12 @@ static void vop2_post_config(struct display_state *state, struct vop2 *vop2)
 	vop2_writel(vop2, RK3568_VP0_PRE_SCAN_HTIMING + vp_offset, pre_scan_dly);
 }
 
+/*
+ * Read VOP internal power domain on/off status.
+ * We should query BISR_STS register in PMU for
+ * power up/down status when memory repair is enabled.
+ * Return value: 1 for power on, 0 for power off;
+ */
 static int vop2_wait_power_domain_on(struct vop2 *vop2, struct vop2_power_domain_data *pd_data)
 {
 	int val = 0;
@@ -1397,7 +1428,7 @@ static int vop2_wait_power_domain_on(struct vop2 *vop2, struct vop2_power_domain
 	if (is_bisr_en) {
 		shift = pd_data->pmu_status_shift;
 		return readl_poll_timeout(vop2->sys_pmu + RK3588_PMU_BISR_STATUS5, val,
-					  !((val >> shift) & 0x1), 50 * 1000);
+					  ((val >> shift) & 0x1), 50 * 1000);
 	} else {
 		shift = pd_data->pd_status_shift;
 		return readl_poll_timeout(vop2->regs + RK3568_SYS_STATUS0, val,
@@ -1416,8 +1447,11 @@ static int vop2_power_domain_on(struct vop2 *vop2, int plane_id)
 		printf("can't find win_data by phys_id\n");
 		return -EINVAL;
 	}
+
 	pd_data = win_data->pd_data;
-	if (pd_data->is_parent_needed) {
+	if (!pd_data || pd_data->is_enabled) {
+		return 0;
+	} else if (pd_data->is_parent_needed) {
 		ret = vop2_power_domain_on(vop2, pd_data->parent_phy_id);
 		if (ret) {
 			printf("can't open parent power domain\n");
@@ -1431,6 +1465,7 @@ static int vop2_power_domain_on(struct vop2 *vop2, int plane_id)
 		printf("wait vop2 power domain timeout\n");
 		return ret;
 	}
+	pd_data->is_enabled = true;
 
 	return 0;
 }
@@ -1539,15 +1574,6 @@ static void vop2_global_initial(struct vop2 *vop2, struct display_state *state)
 					layer_phy_id = vop2->vp_plane_mask[i].attached_layers[j];
 					vop2->vp_plane_mask[i].plane_mask |= BIT(layer_phy_id);
 				}
-			}
-		}
-	}
-
-	if (vop2->version == VOP_VERSION_RK3588) {
-		for (i = 0; i < vop2->data->nr_vps; i++) {
-			if (cstate->crtc->vps[i].enable) {
-				if (vop2_power_domain_on(vop2, vop2->vp_plane_mask[i].primary_plane_id))
-					printf("open vp[%d] plane pd fail\n", i);
 			}
 		}
 	}
@@ -1785,7 +1811,12 @@ static unsigned long vop2_calc_cru_cfg(struct display_state *state,
 		/* dclk_core = dclk_out * K = if_pixclk * K = v_pixclk / 4 */
 		dclk_out_rate = if_pixclk_rate;
 		/* dclk_rate = N * dclk_core_rate N = (1,2,4 ), we get a little factor here */
-		dclk_rate = dclk_core_rate;
+		dclk_rate = vop2_calc_dclk(dclk_out_rate, vop2->data->vp_data->max_dclk);
+		if (!dclk_rate) {
+			printf("MIPI dclk out of range(max_dclk: %d KHZ, dclk_rate: %ld KHZ)\n",
+			       vop2->data->vp_data->max_dclk, dclk_rate);
+			return -EINVAL;
+		}
 		*dclk_out_div = dclk_rate / dclk_out_rate;
 		*dclk_core_div = dclk_rate / dclk_core_rate;
 		*if_pixclk_div = 1;       /*mipi pixclk == dclk_out*/
@@ -2341,9 +2372,16 @@ static int rockchip_vop2_init(struct display_state *state)
 	}
 	vop2_writel(vop2, RK3568_VP0_DSP_VTOTAL_VS_END + vp_offset,
 		    (vtotal << 16) | vsync_len);
-	val = !!(mode->flags & DRM_MODE_FLAG_DBLCLK);
-	vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset, EN_MASK,
-			CORE_DCLK_DIV_EN_SHIFT, val, false);
+
+	if (vop2->version == VOP_VERSION_RK3568) {
+		if (mode->flags & DRM_MODE_FLAG_DBLCLK ||
+		    conn_state->output_if & VOP_OUTPUT_IF_BT656)
+			vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset, EN_MASK,
+					CORE_DCLK_DIV_EN_SHIFT, 1, false);
+		else
+			vop2_mask_write(vop2, RK3568_VP0_DSP_CTRL + vp_offset, EN_MASK,
+					CORE_DCLK_DIV_EN_SHIFT, 0, false);
+	}
 
 	if (conn_state->output_mode == ROCKCHIP_OUT_MODE_YUV420)
 		vop2_mask_write(vop2, RK3568_VP0_MIPI_CTRL + vp_offset,
@@ -2415,6 +2453,11 @@ static int rockchip_vop2_init(struct display_state *state)
 			RK3568_DSP_LINE_FLAG_NUM0_SHIFT, act_end, false);
 	vop2_mask_write(vop2, RK3568_SYS_CTRL_LINE_FLAG0 + line_flag_offset, LINE_FLAG_NUM_MASK,
 			RK3568_DSP_LINE_FLAG_NUM1_SHIFT, act_end, false);
+
+	if (vop2->version == VOP_VERSION_RK3588) {
+		if (vop2_power_domain_on(vop2, vop2->vp_plane_mask[cstate->crtc_id].primary_plane_id))
+			printf("open vp%d plane pd fail\n", cstate->crtc_id);
+	}
 
 	return 0;
 }
@@ -2505,6 +2548,27 @@ static void vop2_setup_scale(struct vop2 *vop2, struct vop2_win_data *win,
 	}
 }
 
+static void vop2_axi_config(struct vop2 *vop2, struct vop2_win_data *win)
+{
+	u32 win_offset = win->reg_offset;
+
+	if (win->type == CLUSTER_LAYER) {
+		vop2_mask_write(vop2, RK3568_CLUSTER0_CTRL + win_offset, CLUSTER_AXI_ID_MASK,
+				CLUSTER_AXI_ID_SHIFT, win->axi_id, false);
+		vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL2 + win_offset, CLUSTER_AXI_YRGB_ID_MASK,
+				CLUSTER_AXI_YRGB_ID_SHIFT, win->axi_yrgb_id, false);
+		vop2_mask_write(vop2, RK3568_CLUSTER0_WIN0_CTRL2 + win_offset, CLUSTER_AXI_UV_ID_MASK,
+				CLUSTER_AXI_UV_ID_SHIFT, win->axi_uv_id, false);
+	} else {
+		vop2_mask_write(vop2, RK3568_ESMART0_AXI_CTRL + win_offset, ESMART_AXI_ID_MASK,
+				ESMART_AXI_ID_SHIFT, win->axi_id, false);
+		vop2_mask_write(vop2, RK3568_ESMART0_CTRL1 + win_offset, ESMART_AXI_YRGB_ID_MASK,
+				ESMART_AXI_YRGB_ID_SHIFT, win->axi_yrgb_id, false);
+		vop2_mask_write(vop2, RK3568_ESMART0_CTRL1 + win_offset, ESMART_AXI_UV_ID_MASK,
+				ESMART_AXI_UV_ID_SHIFT, win->axi_uv_id, false);
+	}
+}
+
 static void vop2_set_cluster_win(struct display_state *state, struct vop2_win_data *win)
 {
 	struct crtc_state *cstate = &state->crtc_state;
@@ -2540,6 +2604,9 @@ static void vop2_set_cluster_win(struct display_state *state, struct vop2_win_da
 		y_mirror = 0;
 
 	vop2_setup_scale(vop2, win, src_w, src_h, crtc_w, crtc_h);
+
+	if (vop2->version == VOP_VERSION_RK3588)
+		vop2_axi_config(vop2, win);
 
 	if (y_mirror)
 		printf("WARN: y mirror is unsupported by cluster window\n");
@@ -2611,6 +2678,9 @@ static void vop2_set_smart_win(struct display_state *state, struct vop2_win_data
 		y_mirror = 0;
 
 	vop2_setup_scale(vop2, win, src_w, src_h, crtc_w, crtc_h);
+
+	if (vop2->version == VOP_VERSION_RK3588)
+		vop2_axi_config(vop2, win);
 
 	if (y_mirror)
 		cstate->dma_addr += (src_h - 1) * xvir * 4;
@@ -3107,6 +3177,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 0,
 		.layer_sel_win_id = 0,
 		.reg_offset = 0,
+		.axi_id = 0,
+		.axi_yrgb_id = 2,
+		.axi_uv_id = 3,
 		.pd_data = &rk3588_cluster0_pd_data,
 	},
 
@@ -3117,6 +3190,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 1,
 		.layer_sel_win_id = 1,
 		.reg_offset = 0x200,
+		.axi_id = 0,
+		.axi_yrgb_id = 6,
+		.axi_uv_id = 7,
 		.pd_data = &rk3588_cluster1_pd_data,
 	},
 
@@ -3127,6 +3203,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 2,
 		.layer_sel_win_id = 4,
 		.reg_offset = 0x400,
+		.axi_id = 1,
+		.axi_yrgb_id = 2,
+		.axi_uv_id = 3,
 		.pd_data = &rk3588_cluster2_pd_data,
 	},
 
@@ -3137,6 +3216,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 3,
 		.layer_sel_win_id = 5,
 		.reg_offset = 0x600,
+		.axi_id = 1,
+		.axi_yrgb_id = 6,
+		.axi_uv_id = 7,
 		.pd_data = &rk3588_cluster3_pd_data,
 	},
 
@@ -3147,7 +3229,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 4,
 		.layer_sel_win_id = 2,
 		.reg_offset = 0,
-		.pd_data = &rk3588_esmart_pd_data,
+		.axi_id = 0,
+		.axi_yrgb_id = 0x0a,
+		.axi_uv_id = 0x0b,
 	},
 
 	{
@@ -3157,6 +3241,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 5,
 		.layer_sel_win_id = 3,
 		.reg_offset = 0x200,
+		.axi_id = 0,
+		.axi_yrgb_id = 0x0c,
+		.axi_uv_id = 0x0d,
 		.pd_data = &rk3588_esmart_pd_data,
 	},
 
@@ -3167,6 +3254,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 6,
 		.layer_sel_win_id = 6,
 		.reg_offset = 0x400,
+		.axi_id = 1,
+		.axi_yrgb_id = 0x0a,
+		.axi_uv_id = 0x0b,
 		.pd_data = &rk3588_esmart_pd_data,
 	},
 
@@ -3177,6 +3267,9 @@ static struct vop2_win_data rk3588_win_data[8] = {
 		.win_sel_port_offset = 7,
 		.layer_sel_win_id = 7,
 		.reg_offset = 0x600,
+		.axi_id = 1,
+		.axi_yrgb_id = 0x0c,
+		.axi_uv_id = 0x0d,
 		.pd_data = &rk3588_esmart_pd_data,
 	},
 };

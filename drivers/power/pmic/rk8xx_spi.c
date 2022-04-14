@@ -16,6 +16,9 @@ DECLARE_GLOBAL_DATA_PTR;
 
 #define RK806_CHIP_NAME			0x5A
 #define RK806_CHIP_VER			0x5B
+#define RK806_HW_VER			0x21
+#define HW_DUAL_PMIC			0x28
+#define HW_SINGLE_PMIC			0xe8
 
 #define RK806_CMD_READ			0
 #define RK806_CMD_WRITE			BIT(7)
@@ -35,6 +38,8 @@ DECLARE_GLOBAL_DATA_PTR;
 #define RK806_IRQ_PWRON_FALL_MSK	BIT(0)
 #define RK806_IRQ_PWRON_RISE_MSK	BIT(1)
 #define RK806_DEV_OFF			BIT(0)
+#define RK806_RST_MODE1			0x01
+#define RK806_RST_MODE2			0x02
 #define VERSION_AB			0x01
 
 #if CONFIG_IS_ENABLED(IRQ)
@@ -181,6 +186,8 @@ static int rk8xx_spi_ofdata_to_platdata(struct udevice *dev)
 	u32 interrupt, phandle;
 	int ret;
 
+	rk8xx->rst_fun = dev_read_u32_default(dev, "pmic-reset-func", 0);
+
 	phandle = dev_read_u32_default(dev, "interrupt-parent", -ENODATA);
 	if (phandle == -ENODATA) {
 		printf("Read 'interrupt-parent' failed, ret=%d\n", phandle);
@@ -247,7 +254,7 @@ static int rk8xx_spi_probe(struct udevice *dev)
 	struct rk8xx_priv *priv = dev_get_priv(dev);
 	struct udevice *spi = dev_get_parent(dev);
 	struct spi_slave *slave = NULL;
-	u8 msb, lsb, value;
+	u8 msb, lsb, value = 0;
 	int ret;
 
 	if (spi->seq < 0) {
@@ -277,6 +284,24 @@ static int rk8xx_spi_probe(struct udevice *dev)
 	priv->variant = ((msb << 8) | lsb) & RK8XX_ID_MSK;
 	printf("spi%d: RK%x%x: %d\n", spi->seq, msb, (lsb >> 4), lsb & 0x0f);
 
+	ret = rk806_spi_read(dev, RK806_HW_VER, &value, 1);
+	if (ret)
+		panic("RK806: read RK806_HW_VER error!\n");
+	/* dual rk806 dev name: "rk806master@0", "rk806slave@1"
+	 * single rk806 dev name: " rk806single@0"
+	 */
+	if ((!strcmp(dev->name, "rk806master@0")) || (!strcmp(dev->name, "rk806slave@1"))) {
+		if (value != HW_DUAL_PMIC) {
+			dev_err(dev, "HW single pmic, the firmware dual pmic(0x%x)!\n", value);
+			run_command("download", 0);
+		}
+	} else {
+		if (value != HW_SINGLE_PMIC) {
+			dev_err(dev, "HW dual pmic, the firmware single pmic(0x%x)!\n", value);
+			run_command("download", 0);
+		}
+	}
+
 	if ((lsb & 0x0f) == VERSION_AB) {
 		ret = rk806_spi_read(dev, RK806_SYS_CFG1, &value, 1);
 		if (ret) {
@@ -285,6 +310,18 @@ static int rk8xx_spi_probe(struct udevice *dev)
 		}
 		value |= 0x80;
 		rk806_spi_write(dev, RK806_SYS_CFG1, &value, 1);
+	}
+
+	if (priv->rst_fun) {
+		rk806_spi_read(dev, RK806_SYS_CFG3, &value, 1);
+		value &= 0x3f;
+		if (priv->rst_fun == RK806_RST_MODE1) {
+			value |= (RK806_RST_MODE1 << 6);
+			rk806_spi_write(dev, RK806_SYS_CFG3, &value, 1);
+		} else if (priv->rst_fun == RK806_RST_MODE2) {
+			value |= (RK806_RST_MODE2 << 6);
+			rk806_spi_write(dev, RK806_SYS_CFG3, &value, 1);
+		}
 	}
 
 	rk8xx_spi_irq_chip_init(dev);
