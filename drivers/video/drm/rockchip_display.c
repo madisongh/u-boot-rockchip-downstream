@@ -886,6 +886,13 @@ static int display_init(struct display_state *state)
 		}
 	} else if (conn_funcs->get_timing) {
 		ret = conn_funcs->get_timing(state);
+		/*hardware dp1 not connect it6516 and vp0 not display*/
+		if(!strcmp(conn_state->dev->name,"dp@fde60000")){
+			if(mode->clock == 0 && mode->hdisplay == 0 && mode->vdisplay == 0){
+				printf("%s l2 disconnected\n", conn_state->dev->name);
+				goto deinit;
+			}
+		}
 	} else if (conn_funcs->get_edid) {
 		ret = conn_funcs->get_edid(state);
 #if defined(CONFIG_I2C_EDID)
