@@ -653,6 +653,9 @@ static void dw_mipi_dsi2_enable(struct dw_mipi_dsi2 *dsi2)
 {
 	dw_mipi_dsi2_ipi_set(dsi2);
 
+	dsi_write(dsi2, DSI2_PWR_UP, RESET);
+	dsi_write(dsi2, DSI2_PWR_UP, POWER_UP);
+
 	if (dsi2->mode_flags & MIPI_DSI_MODE_VIDEO)
 		dw_mipi_dsi2_set_vid_mode(dsi2);
 	else
@@ -717,7 +720,7 @@ static int dw_mipi_dsi2_connector_init(struct display_state *state)
 
 	if (!(dsi2->mode_flags & MIPI_DSI_MODE_VIDEO)) {
 		conn_state->output_flags |= ROCKCHIP_OUTPUT_MIPI_DS_MODE;
-		conn_state->hold_mode = true;
+		//conn_state->hold_mode = true;
 	}
 
 	if (dsi2->lanes > 4) {
