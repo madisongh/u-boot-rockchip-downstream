@@ -53,6 +53,7 @@ struct rockchip_panel_plat {
 		unsigned int disable;
 		unsigned int reset;
 		unsigned int init;
+		unsigned int pwr;
 	} delay;
 
 	struct rockchip_panel_cmds *on_cmds;
@@ -66,7 +67,7 @@ struct rockchip_panel_priv {
 	struct udevice *backlight;
 	struct gpio_desc enable_gpio;
 	struct gpio_desc reset_gpio;
-
+	struct gpio_desc pwr_gpio;
 	int cmd_type;
 	struct gpio_desc spi_sdi_gpio;
 	struct gpio_desc spi_scl_gpio;
@@ -280,6 +281,12 @@ static void panel_simple_prepare(struct rockchip_panel *panel)
 	if (priv->power_supply)
 		regulator_set_enable(priv->power_supply, !plat->power_invert);
 
+    if (dm_gpio_is_valid(&priv->pwr_gpio))
+	    dm_gpio_set_value(&priv->pwr_gpio, 1);
+
+    if(plat->delay.pwr)
+       mdelay(plat->delay.pwr);
+
 	if (dm_gpio_is_valid(&priv->enable_gpio))
 		dm_gpio_set_value(&priv->enable_gpio, 1);
 
@@ -342,6 +349,9 @@ static void panel_simple_unprepare(struct rockchip_panel *panel)
 
 	if (dm_gpio_is_valid(&priv->enable_gpio))
 		dm_gpio_set_value(&priv->enable_gpio, 0);
+
+	if (dm_gpio_is_valid(&priv->pwr_gpio))
+        dm_gpio_set_value(&priv->pwr_gpio, 0);
 
 	if (priv->power_supply)
 		regulator_set_enable(priv->power_supply, plat->power_invert);
@@ -409,6 +419,7 @@ static int rockchip_panel_ofdata_to_platdata(struct udevice *dev)
 	plat->delay.init = dev_read_u32_default(dev, "init-delay-ms", 0);
 	plat->delay.reset = dev_read_u32_default(dev, "reset-delay-ms", 0);
 
+	plat->delay.pwr = dev_read_u32_default(dev, "pwr-delay-ms", 0);
 	plat->bus_format = dev_read_u32_default(dev, "bus-format",
 						MEDIA_BUS_FMT_RBG888_1X24);
 	plat->bpc = dev_read_u32_default(dev, "bpc", 8);
@@ -458,6 +469,14 @@ static int rockchip_panel_probe(struct udevice *dev)
 	int ret;
 	const char *cmd_type;
 
+    ret = gpio_request_by_name(dev, "pwr-gpios", 0,
+        	&priv->pwr_gpio, GPIOD_IS_OUT);
+    if (ret && ret != -ENOENT) {
+        printf("%s: Cannot get pwr GPIO: %d\n", __func__, ret);
+        return ret;
+    }
+
+	
 	ret = gpio_request_by_name(dev, "enable-gpios", 0,
 				   &priv->enable_gpio, GPIOD_IS_OUT);
 	if (ret && ret != -ENOENT) {
