@@ -1252,12 +1252,14 @@ static int parse_label(char **c, struct pxe_menu *cfg)
 			break;
 
 		case T_FDT:
-			label->fdt = env_get("ff_check_dtb");
 			
 			if (!label->fdt){
 				err = parse_sliteral(c, &label->fdt);
 			}
-
+			
+			if(env_get("ff_check_dtb"))
+				label->fdt = env_get("ff_check_dtb");
+			
 			if (label->fdt)
 				printf("FIREFLY: use %s\n",label->fdt);
 			break;
