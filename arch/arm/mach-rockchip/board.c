@@ -484,6 +484,12 @@ static void check_version_choose_dtb(void)
 			return;
 		}
 
+		const char * dtb_name = fdt_getprop(blob, node, "dtb-name", NULL);
+		if (!dtb_name) {
+			printf("FIREFLY: Failed to get fdt dtb-name\n");
+			return;
+		}
+
 		if (!!fdtdec_get_int_array(blob, node, "version-num", info, 1)){
 			printf("FIREFLY: Failed to get fdt version-num\n");
 			return;
@@ -514,9 +520,9 @@ static void check_version_choose_dtb(void)
 					sprintf(version_dtb_path, "version-dtb-path%d",i);
 					int str_len = strlen(version_dtb_path);
 					const char * str = fdt_getprop(blob, node, version_dtb_path, &str_len);
-					sprintf(ff_dtb, "/%s",str);
 					if(str)
 					{
+						sprintf(ff_dtb, "/%s-%s.dtb",dtb_name,str);
 						printf("FIREFLY: choose dtb success, dtb file = %s\n",ff_dtb);
 						env_set("ff_check_dtb", ff_dtb);
 						return ;
