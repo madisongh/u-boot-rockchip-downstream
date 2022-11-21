@@ -106,7 +106,7 @@ static int fixed_regulator_set_enable(struct udevice *dev, bool enable)
 	struct fixed_regulator_platdata *dev_pdata = dev_get_platdata(dev);
 	int ret;
 
-	debug("%s: dev='%s', enable=%d, delay=%d, has_gpio=%d\n", __func__,
+	printf("Firefly %s: dev='%s', enable=%d, delay=%d, has_gpio=%d\n", __func__,
 	      dev->name, enable, dev_pdata->startup_delay_us,
 	      dm_gpio_is_valid(&dev_pdata->gpio));
 	/* Enable GPIO is optional */
