@@ -210,11 +210,13 @@ static int rockchip_panel_send_spi_cmds(struct rockchip_panel *panel, struct dis
 	return 0;
 }
 
+#define MIPI_FIREFLY_MIPI_ID_CHECK 0x99
 static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 					struct rockchip_panel_cmds *cmds)
 {
-	int i, ret;
+	int i,j, ret;
 	struct drm_dsc_picture_parameter_set *pps = NULL;
+	u8 save[3] = {0};
 
 	if (!cmds)
 		return -EINVAL;
@@ -248,6 +250,18 @@ static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 			memcpy(pps, desc->payload, header->payload_length);
 			ret = mipi_dsi_picture_parameter_set(dsi, pps);
 			kfree(pps);
+			break;
+		case MIPI_FIREFLY_MIPI_ID_CHECK:
+			ret = mipi_dsi_generic_read(dsi,&desc->payload[0] ,1, save ,header->payload_length - 1);
+			for(j = 0;j < header->payload_length - 1; j++){
+				printf("[Firefly]-[%s]-[%d]: ret = %d, read %X = %X\r\n", __FUNCTION__ , __LINE__,ret ,desc->payload[0], save[j]);
+				if( desc->payload[j+1] == save[j]) {
+					printf("[Firefly]-[%s]-[%d]: MIPI ID Check Pass!\r\n", __FUNCTION__ , __LINE__);
+				} else {
+					printf("[Firefly]-[%s]-[%d]: Not Found ID = %X MIPI!\r\n", __FUNCTION__ , __LINE__, desc->payload[j+1]);
+					return -EFIREFLY;
+				}
+			}
 			break;
 		default:
 			printf("unsupport command data type: %d\n",

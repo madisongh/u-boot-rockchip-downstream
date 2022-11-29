@@ -164,5 +164,6 @@
 #define EJUKEBOX	528	/* Request initiated, but will not complete before timeout */
 #define EIOCBQUEUED	529	/* iocb queued, will get completion event */
 #define ERECALLCONFLICT	530	/* conflict with recalled state */
+#define EFIREFLY        999     /* ERR define by Firefly */
 
 #endif
