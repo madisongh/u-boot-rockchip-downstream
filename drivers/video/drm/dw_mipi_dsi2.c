@@ -725,7 +725,7 @@ static int dw_mipi_dsi2_connector_pre_init(struct rockchip_connector *conn,
 						  MIPI_DSI_MODE_VIDEO_HBP |
 						  MIPI_DSI_MODE_LPM |
 						  MIPI_DSI_MODE_EOT_PACKET);
-
+	device->id = dsi2->id;
 	sprintf(name, "%s.%d", host->dev->name, device->channel);
 	device_set_name(dev, name);
 	dsi2->device = device;

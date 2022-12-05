@@ -157,7 +157,7 @@ enum mipi_dsi_pixel_format {
 struct mipi_dsi_device {
 	struct mipi_dsi_host *host;
 	struct udevice *dev;
-
+	
 	char name[DSI_DEV_NAME_SIZE];
 	unsigned int channel;
 	unsigned int lanes;
@@ -165,6 +165,7 @@ struct mipi_dsi_device {
 	unsigned long mode_flags;
 	unsigned long hs_rate;
 	unsigned long lp_rate;
+	int id;
 };
 
 /**
