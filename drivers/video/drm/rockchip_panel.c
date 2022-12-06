@@ -211,15 +211,20 @@ static int rockchip_panel_send_spi_cmds(struct rockchip_panel *panel, struct dis
 }
 
 #define MIPI_FIREFLY_MIPI_ID_CHECK 0x99
+#define FF_CHECK       2
+#define FF_NOT_CHECK   1
+#define FF_NONE        0
+
 static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 					struct rockchip_panel_cmds *cmds)
 {
-	int i,j, ret;
+	int i,j, ret = 0;
 	struct drm_dsc_picture_parameter_set *pps = NULL;
 	u8 save[3] = {0};
         const char *bootargs;
         char boot_options[1024] = {0};
 	bootargs = env_get("bootargs");
+	int uboot_check_state = FF_NOT_CHECK;
 
 	if (!cmds)
 		return -EINVAL;
@@ -260,15 +265,11 @@ static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 				printf("[Firefly]-[%s]-[%d]:  read %X = %X\r\n", __FUNCTION__ , __LINE__ ,desc->payload[0], save[j]);
 				if( desc->payload[j+1] == save[j]) {
 					printf("[Firefly]-[%s]-[%d]: MIPI ID Check Pass!\r\n", __FUNCTION__ , __LINE__);
-					snprintf(boot_options, sizeof(boot_options),
-							"%s dsi-%d=%d ", bootargs,dsi->id, 1);
-					env_update("bootargs", boot_options);
+					uboot_check_state = FF_NOT_CHECK;
 				} else {
 					printf("[Firefly]-[%s]-[%d]: Not Found ID = %X MIPI!\r\n", __FUNCTION__ , __LINE__, desc->payload[j+1]);
-					snprintf(boot_options, sizeof(boot_options),
-							"%s dsi-%d=%d ", bootargs,dsi->id, 0);
-					env_update("bootargs", boot_options);
-					return -EFIREFLY;
+					uboot_check_state = FF_CHECK;
+					ret = -EFIREFLY;
 				}
 			}
 
@@ -280,9 +281,14 @@ static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 			       header->data_type);
 			return -EINVAL;
 		}
+		
+		snprintf(boot_options, sizeof(boot_options),
+				"%s dsi-%d=%d ", bootargs,dsi->id, uboot_check_state);
+
+		env_update("bootargs", boot_options);
 
 		if (ret < 0) {
-			printf("failed to write cmd%d: %d\n", i, ret);
+			printf("failed to write/read cmd%d: %d\n", i, ret);
 			return ret;
 		}
 
