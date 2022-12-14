@@ -1924,7 +1924,7 @@ static int rockchip_display_probe(struct udevice *dev)
 	struct device_node *port_node, *vop_node, *ep_node, *port_parent_node;
 	struct public_phy_data *data;
 	bool is_ports_node = false;
-
+	bool station_logo = false;
 #if defined(CONFIG_ROCKCHIP_RK3568)
 	rockchip_display_fixup_dts((void *)blob);
 #endif
@@ -2004,12 +2004,16 @@ static int rockchip_display_probe(struct udevice *dev)
 		memset(s, 0, sizeof(*s));
 
 		INIT_LIST_HEAD(&s->head);
-		ret = ofnode_read_string_index(node, "logo,uboot", 0, &name);
-		if (!ret)
-			memcpy(s->ulogo_name, name, strlen(name));
-		ret = ofnode_read_string_index(node, "logo,kernel", 0, &name);
-		if (!ret)
-			memcpy(s->klogo_name, name, strlen(name));
+		station_logo = ofnode_read_bool(node, "station-logo");
+		
+		if(!station_logo){
+			ret = ofnode_read_string_index(node, "logo,uboot", 0, &name);
+			if (!ret)
+				memcpy(s->ulogo_name, name, strlen(name));
+			ret = ofnode_read_string_index(node, "logo,kernel", 0, &name);
+			if (!ret)
+				memcpy(s->klogo_name, name, strlen(name));
+		}
 		ret = ofnode_read_string_index(node, "logo,mode", 0, &name);
 		if (!strcmp(name, "fullscreen"))
 			s->logo_mode = ROCKCHIP_DISPLAY_FULLSCREEN;
@@ -2048,6 +2052,30 @@ static int rockchip_display_probe(struct udevice *dev)
 		s->crtc_state.crtc = crtc;
 		s->crtc_state.crtc_id = get_crtc_id(np_to_ofnode(ep_node), is_ports_node);
 		s->node = node;
+
+		
+		s->force_output = ofnode_read_bool(node, "force-output");
+		
+		if(station_logo){
+			printf("============================ s->crtc_state.crtc_id = %d\n", s->crtc_state.crtc_id);
+			if (s->crtc_state.crtc_id == 0) {
+				ret = ofnode_read_string_index(node, "logo,stations", 0, &name);
+				if (!ret)       
+					memcpy(s->ulogo_name, name, strlen(name));
+
+				ret = ofnode_read_string_index(node, "logo,stations", 0, &name);
+				if (!ret)
+					memcpy(s->klogo_name, name, strlen(name));
+			} else {
+				ret = ofnode_read_string_index(node, "logo,stationm", 0, &name);
+				if (!ret)       
+					memcpy(s->ulogo_name, name, strlen(name));
+
+				ret = ofnode_read_string_index(node, "logo,stationm", 0, &name);
+				if (!ret)
+					memcpy(s->klogo_name, name, strlen(name));
+			}
+		}
 
 		if (is_ports_node) { /* only vop2 will get into here */
 			ofnode vp_node = np_to_ofnode(port_node);
