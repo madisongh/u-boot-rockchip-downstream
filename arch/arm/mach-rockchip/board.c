@@ -67,6 +67,11 @@ __weak int rk_board_fdt_fixup(void *blob)
 	return 0;
 }
 
+__weak int rk_board_dm_fdt_fixup(void *blob)
+{
+	return 0;
+}
+
 __weak int soc_clk_dump(void)
 {
 	return 0;
@@ -601,6 +606,12 @@ int interrupt_debugger_init(void)
 
 int board_fdt_fixup(void *blob)
 {
+	/*
+	 * Device's platdata points to orignal fdt blob property,
+	 * access DM device before any fdt fixup.
+	 */
+	rk_board_dm_fdt_fixup(blob);
+
 	/* Common fixup for DRM */
 #ifdef CONFIG_DRM_ROCKCHIP
 	rockchip_display_fixup(blob);
@@ -787,7 +798,9 @@ int board_init_f_boot_flags(void)
 {
 	int boot_flags = 0;
 
+#ifdef CONFIG_FPGA_ROCKCHIP
 	arch_fpga_init();
+#endif
 #ifdef CONFIG_PSTORE
 	param_parse_pstore();
 #endif
@@ -986,13 +999,13 @@ int board_do_bootm(int argc, char * const argv[])
 
 		if (!sysmem_alloc_base(MEM_ANDROID, (ulong)hdr, size))
 			return -ENOMEM;
-
+if (0) {
 		ret = bootm_image_populate_dtb(img);
 		if (ret) {
 			printf("bootm can't read dtb, ret=%d\n", ret);
 			return ret;
 		}
-
+}
 		ret = android_image_memcpy_separate(hdr, &load_addr);
 		if (ret) {
 			printf("board do bootm failed, ret=%d\n", ret);
@@ -1169,6 +1182,7 @@ char *board_fdt_chosen_bootargs(void *fdt)
 		 */
 #ifdef CONFIG_ANDROID_AB
 		env_update_filter("bootargs", bootargs, "root=");
+		ab_update_root_partition();
 #else
 		env_update("bootargs", bootargs);
 #endif
