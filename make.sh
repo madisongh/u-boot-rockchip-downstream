@@ -227,24 +227,7 @@ function process_args()
 					ARG_FUNCADDR=$1
 				#3. make defconfig
 				else
-					ARG_BOARD=$1
-					if [ ! -f configs/${ARG_BOARD}_defconfig -a ! -f configs/${ARG_BOARD}.config ]; then
-						echo -e "\n${SUPPORT_LIST}\n"
-						echo "ERROR: No configs/${ARG_BOARD}_defconfig"
-						exit 1
-					elif [ -f configs/${ARG_BOARD}.config ]; then
-						BASE1_DEFCONFIG=`filt_val "CONFIG_BASE_DEFCONFIG" configs/${ARG_BOARD}.config`
-						BASE0_DEFCONFIG=`filt_val "CONFIG_BASE_DEFCONFIG" configs/${BASE1_DEFCONFIG}`
-						MAKE_CMD="make ${BASE0_DEFCONFIG} ${BASE1_DEFCONFIG} ${ARG_BOARD}.config -j${JOB}"
-						echo "## ${MAKE_CMD}"
-						make ${BASE0_DEFCONFIG} ${BASE1_DEFCONFIG} ${ARG_BOARD}.config ${OPTION}
-						rm -f ${CC_FILE}
-					else
-						MAKE_CMD="make ${ARG_BOARD}_defconfig -j${JOB}"
-						echo "## ${MAKE_CMD}"
-						make ${ARG_BOARD}_defconfig ${OPTION}
-						rm -f ${CC_FILE}
-					fi
+					echo "Skipping: $1"
 				fi
 				shift 1
 				;;
@@ -716,17 +699,6 @@ function pack_trust_image()
 
 function pack_fit_image()
 {
-	# check host tools
-	if ! which dtc >/dev/null 2>&1 ; then
-		echo "ERROR: No 'dtc', please: apt-get install device-tree-compiler"
-		exit 1
-	elif [ "${ARM64_TRUSTZONE}" == "y" ]; then
-		if ! which python2 >/dev/null 2>&1 ; then
-			echo "ERROR: No python2"
-			exit 1
-		fi
-	fi
-
 	# If we don't plan to have uboot in uboot.img in case of: SPL => Trust => Kernel, creating empty files.
 	if [ "${ARG_NO_UBOOT}" == "y" ]; then
 		rm u-boot-nodtb.bin u-boot.dtb -f
@@ -778,14 +750,11 @@ function finish()
 
 process_args $*
 prepare
-select_toolchain
 select_chip_info
 fixup_platform_configure
 select_ini_file
 handle_args_late
 sub_commands
-clean_files
-make PYTHON=python2 CROSS_COMPILE=${TOOLCHAIN} all --jobs=${JOB}
 pack_images
 finish
 echo ${TOOLCHAIN}
