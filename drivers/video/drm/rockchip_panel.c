@@ -299,15 +299,15 @@ static int rockchip_panel_send_dsi_cmds(struct mipi_dsi_device *dsi,
 	return 0;
 }
 
-static void panel_simple_prepare(struct rockchip_panel *panel)
+static int panel_simple_prepare(struct rockchip_panel *panel)
 {
 	struct rockchip_panel_plat *plat = dev_get_platdata(panel->dev);
 	struct rockchip_panel_priv *priv = dev_get_priv(panel->dev);
 	struct mipi_dsi_device *dsi = dev_get_parent_platdata(panel->dev);
-	int ret;
+	int ret = 0;
 
 	if (priv->prepared)
-		return;
+		return ret;
 
 	if (priv->power_supply)
 		regulator_set_enable(priv->power_supply, !plat->power_invert);
@@ -345,11 +345,14 @@ static void panel_simple_prepare(struct rockchip_panel *panel)
 							   plat->on_cmds);
 		else
 			ret = rockchip_panel_send_dsi_cmds(dsi, plat->on_cmds);
-		if (ret)
+		if (ret){
 			printf("failed to send on cmds: %d\n", ret);
+			return ret;
+		}
 	}
 
 	priv->prepared = true;
+	return ret;
 }
 
 static void panel_simple_unprepare(struct rockchip_panel *panel)

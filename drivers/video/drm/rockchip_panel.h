@@ -12,7 +12,7 @@ struct rockchip_panel;
 struct rockchip_conn;
 
 struct rockchip_panel_funcs {
-	void (*prepare)(struct rockchip_panel *panel);
+	int (*prepare)(struct rockchip_panel *panel);
 	void (*unprepare)(struct rockchip_panel *panel);
 	void (*enable)(struct rockchip_panel *panel);
 	void (*disable)(struct rockchip_panel *panel);
@@ -48,13 +48,16 @@ static inline void rockchip_panel_init(struct rockchip_panel *panel,
 		state->conn_state.bpc = panel->bpc;
 }
 
-static inline void rockchip_panel_prepare(struct rockchip_panel *panel)
+static inline int rockchip_panel_prepare(struct rockchip_panel *panel)
 {
+	int ret = 0;
 	if (!panel)
-		return;
+		return ret;
 
 	if (panel->funcs && panel->funcs->prepare)
-		panel->funcs->prepare(panel);
+		ret = panel->funcs->prepare(panel);
+	
+	return ret;
 }
 
 static inline void rockchip_panel_enable(struct rockchip_panel *panel)

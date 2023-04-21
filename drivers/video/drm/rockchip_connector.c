@@ -210,6 +210,7 @@ int rockchip_connector_get_edid(struct display_state *state)
 static int rockchip_connector_path_pre_enable(struct rockchip_connector *conn,
 					      struct display_state *state)
 {
+	int ret = 0;
 	if (conn->funcs->prepare)
 		conn->funcs->prepare(conn, state);
 
@@ -217,23 +218,23 @@ static int rockchip_connector_path_pre_enable(struct rockchip_connector *conn,
 		rockchip_bridge_pre_enable(conn->bridge);
 
 	if (conn->panel)
-		rockchip_panel_prepare(conn->panel);
+		ret = rockchip_panel_prepare(conn->panel);
 
-	return 0;
+	return ret;
 }
 
 int rockchip_connector_pre_enable(struct display_state *state)
 {
 	struct rockchip_connector *conn;
-
+	int ret = 0;
 	conn = state->conn_state.connector;
-	rockchip_connector_path_pre_enable(conn, state);
+	ret = rockchip_connector_path_pre_enable(conn, state);
 	if (state->conn_state.secondary) {
 		conn = state->conn_state.secondary;
-		rockchip_connector_path_pre_enable(conn, state);
+		ret = rockchip_connector_path_pre_enable(conn, state);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int rockchip_connector_path_enable(struct rockchip_connector *conn,
