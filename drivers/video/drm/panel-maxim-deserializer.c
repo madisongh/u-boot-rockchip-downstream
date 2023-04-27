@@ -120,15 +120,17 @@ static const struct maxim_deserializer_panel_desc maxim_deserializer_default_pan
 	},
 };
 
-static void maxim_deserializer_panel_prepare(struct rockchip_panel *panel)
+static int maxim_deserializer_panel_prepare(struct rockchip_panel *panel)
 {
 	struct maxim_deserializer_panel *p = dev_get_priv(panel->dev);
 
 	if (!p->desc)
-		return;
+		return 0;
 
 	if (p->desc->prepare)
 		p->desc->prepare(p);
+
+	return 0;
 }
 
 static void maxim_deserializer_panel_unprepare(struct rockchip_panel *panel)

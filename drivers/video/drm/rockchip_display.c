@@ -998,7 +998,7 @@ static int display_enable(struct display_state *state)
 	struct crtc_state *crtc_state = &state->crtc_state;
 	const struct rockchip_crtc *crtc = crtc_state->crtc;
 	const struct rockchip_crtc_funcs *crtc_funcs = crtc->funcs;
-
+	int ret = 0;
 	if (!state->is_init)
 		return -EINVAL;
 
@@ -1008,7 +1008,9 @@ static int display_enable(struct display_state *state)
 	if (crtc_funcs->prepare)
 		crtc_funcs->prepare(state);
 
-	rockchip_connector_pre_enable(state);
+	ret = rockchip_connector_pre_enable(state);
+	if(ret)
+		return ret;
 
 	if (crtc_funcs->enable)
 		crtc_funcs->enable(state);
