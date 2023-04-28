@@ -1101,12 +1101,6 @@ config PERSISTENT_RAM_SIZE
 	  This select linux pstore buffer size for U-Boot, the value must be
 	  set if PERSISTENT_RAM_ADDR != 0.
 
-config CHECK_VERSION_CHOOSE_DTB
-	bool "Enable support selecting dtb by checking version"
-	depends on USING_KERNEL_DTB && ROCKCHIP_EARLY_DISTRO_DTB
-	help
-	  This enables selecting dtb by checking version.
-
 source "arch/arm/mach-rockchip/px30/Kconfig"
 source "arch/arm/mach-rockchip/rk3036/Kconfig"
 source "arch/arm/mach-rockchip/rk3066/Kconfig"
