@@ -550,29 +550,17 @@ static void check_version_choose_dtb(void)
 	char version_dtb_path[20] = {0};
 	char ff_dtb[50] = {0};
 
-
 	node = fdt_node_offset_by_compatible(blob, 0, "check-version");
-	if (node > 0) {
-		const char * status = fdt_getprop(blob, node, "status", NULL);
-		if (status && !strcmp(status,"disabled")) {
-			return;
+	if (node >= 0) {
+		if (!fdtdec_get_int_array(blob, node, "version-num", info, 1)){
+			version_num = info[0];
 		}
 
-		if (!!fdtdec_get_int_array(blob, node, "version-num", info, 1)){
-			printf("FIREFLY: Failed to get fdt version-num\n");
-			return;
+		if (!fdtdec_get_int_array(blob, node, "io-channels", info, 2)){
+			channel = info[1];
 		}
-		version_num = info[0];
 
-		if (!!fdtdec_get_int_array(blob, node, "io-channels", info, 2)){
-			printf("FIREFLY: Failed to get fdt io-channels\n");
-			return;
-		}
-		channel = info[1];
-
-		if (!!adc_channel_single_shot("saradc", channel, &adc_val)){
-			printf("FIREFLY: Failed to read saradc\n");
-			return;
+		if (!adc_channel_single_shot("saradc", channel, &adc_val)){
 		}
 		
 		printf("FIREFLY: check dtb: adc_val = %d\n", adc_val);
