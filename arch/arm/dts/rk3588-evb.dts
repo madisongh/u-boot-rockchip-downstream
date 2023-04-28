@@ -28,5 +28,4 @@
 			press-threshold-microvolt = <1750>;
 		};
 	};
-
 };
