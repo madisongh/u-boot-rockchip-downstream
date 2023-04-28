@@ -50,7 +50,6 @@
 #include <asm/arch/resource_img.h>
 #include <asm/arch/rk_atags.h>
 #include <asm/arch/vendor.h>
-#include <adc.h>
 #ifdef CONFIG_ROCKCHIP_EINK_DISPLAY
 #include <rk_eink.h>
 #endif
@@ -470,60 +469,6 @@ static void board_mtd_blk_map_partitions(void)
 }
 #endif
 
-#if defined(CONFIG_CHECK_VERSION_CHOOSE_DTB)
-static void check_version_choose_dtb(void)
-{
-	const void *blob = gd->fdt_blob;
-	int node;
-	u32 info[2];
-	u32 version_num=0, channel=0, adc_val, adc_min, adc_max;
-	char version_adc_range[20] = {0};
-	char version_dtb_path[20] = {0};
-	char ff_dtb[50] = {0};
-
-	node = fdt_node_offset_by_compatible(blob, 0, "check-version");
-	if (node >= 0) {
-		if (!fdtdec_get_int_array(blob, node, "version-num", info, 1)){
-			version_num = info[0];
-		}
-
-		if (!fdtdec_get_int_array(blob, node, "io-channels", info, 2)){
-			channel = info[1];
-		}
-
-		if (!adc_channel_single_shot("saradc", channel, &adc_val)){
-		}
-		
-		printf("FIREFLY: check dtb: adc_val = %d\n", adc_val);
-		for(int i=0; i<version_num; i++)
-		{
-			sprintf(version_adc_range, "version-adc-range%d",i);
-			if (!fdtdec_get_int_array(blob, node, version_adc_range, info, 2))
-			{
-				adc_min = info[0];
-				adc_max = info[1];
-				if(adc_val >= adc_min && adc_val <= adc_max)
-				{
-					sprintf(version_dtb_path, "version-dtb-path%d",i);
-					int str_len = strlen(version_dtb_path);
-					const char * str = fdt_getprop(blob, node, version_dtb_path, &str_len);
-					sprintf(ff_dtb, "/%s",str);
-					if(str)
-					{
-						printf("FIREFLY: choose dtb success, dtb file = %s\n",ff_dtb);
-						env_set("ff_check_dtb", ff_dtb);
-						return ;
-					}
-				}
-			}
-		}
-
-		env_set("ff_check_dtb", "/rk-kernel.dtb");
-		printf("FIREFLY: choose dtb error, default dtbfile = rk-kernel.dtb\n");
-	}
-}
-#endif
-
 int board_init(void)
 {
 	board_debug_init();
@@ -542,11 +487,6 @@ int board_init(void)
 #endif
 	init_kernel_dtb();
 #endif
-
-#if defined(CONFIG_CHECK_VERSION_CHOOSE_DTB)
-	check_version_choose_dtb();
-#endif
-
 	early_download();
 
 	/*
