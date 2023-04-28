@@ -1216,6 +1216,7 @@ static int parse_label(char **c, struct pxe_menu *cfg)
 	}
 
 	list_add_tail(&label->list, &cfg->labels);
+
 	while (1) {
 		s = *c;
 		get_token(c, &t, L_KEYWORD);
@@ -1252,16 +1253,8 @@ static int parse_label(char **c, struct pxe_menu *cfg)
 			break;
 
 		case T_FDT:
-			
-			if (!label->fdt){
+			if (!label->fdt)
 				err = parse_sliteral(c, &label->fdt);
-			}
-			
-			if(env_get("ff_check_dtb"))
-				label->fdt = env_get("ff_check_dtb");
-			
-			if (label->fdt)
-				printf("FIREFLY: use %s\n",label->fdt);
 			break;
 
 		case T_FDTDIR:
@@ -1683,7 +1676,7 @@ static int do_sysboot(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 		filename = argv[5];
 		env_set("bootfile", filename);
 	}
-	
+
 	if (strstr(argv[3], "ext2"))
 		do_getfile = do_get_ext2;
 	else if (strstr(argv[3], "fat"))
