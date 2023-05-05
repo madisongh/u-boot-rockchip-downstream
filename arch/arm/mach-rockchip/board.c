@@ -515,7 +515,7 @@ static void board_debug_init(void)
 	if (IS_ENABLED(CONFIG_CONSOLE_DISABLE_CLI))
 		printf("Cmd interface: disabled\n");
 }
-
+#if 0
 #if defined(CONFIG_MTD_BLK) && defined(CONFIG_USING_KERNEL_DTB)
 static void board_mtd_blk_map_partitions(void)
 {
@@ -525,6 +525,7 @@ static void board_mtd_blk_map_partitions(void)
 	if (dev_desc)
 		mtd_blk_map_partitions(dev_desc);
 }
+#endif
 #endif
 
 #if defined(CONFIG_CHECK_VERSION_CHOOSE_DTB)
