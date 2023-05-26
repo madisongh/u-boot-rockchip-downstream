@@ -660,6 +660,10 @@ int board_fdt_fixup(void *blob)
 	rockchip_display_fixup(blob);
 #endif
 
+#ifdef CONFIG_ROCKCHIP_VENDOR_PARTITION
+	vendor_storage_fixup(blob);
+#endif
+
 	return rk_board_fdt_fixup(blob);
 }
 
@@ -860,9 +864,10 @@ int board_init_f_boot_flags(void)
 	return boot_flags;
 }
 
-#if defined(CONFIG_USB_GADGET) && defined(CONFIG_USB_GADGET_DWC2_OTG)
-#include <fdt_support.h>
+#if defined(CONFIG_USB_GADGET)
 #include <usb.h>
+#if defined(CONFIG_USB_GADGET_DWC2_OTG)
+#include <fdt_support.h>
 #include <usb/dwc2_udc.h>
 
 static struct dwc2_plat_otg_data otg_data = {
@@ -932,7 +937,17 @@ int board_usb_cleanup(int index, enum usb_init_type init)
 {
 	return 0;
 }
-#endif
+#elif defined(CONFIG_USB_DWC3_GADGET) /* CONFIG_USB_GADGET_DWC2_OTG */
+#include <dwc3-uboot.h>
+
+int board_usb_cleanup(int index, enum usb_init_type init)
+{
+	dwc3_uboot_exit(index);
+	return 0;
+}
+
+#endif /* CONFIG_USB_DWC3_GADGET */
+#endif /* CONFIG_USB_GADGET */
 
 static void bootm_no_reloc(void)
 {
