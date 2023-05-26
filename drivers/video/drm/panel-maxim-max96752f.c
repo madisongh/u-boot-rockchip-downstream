@@ -42,13 +42,16 @@ struct max96752f {
 	const struct panel_desc *desc;
 };
 
-static void max96752f_panel_prepare(struct rockchip_panel *panel)
+static int max96752f_panel_prepare(struct rockchip_panel *panel)
 {
 	struct max96752f *max96752f = dev_get_priv(panel->dev);
 	const struct panel_desc *desc = max96752f->desc;
+	int ret = 0;
 
 	if (desc->prepare)
 		desc->prepare(max96752f);
+
+	return ret;
 }
 
 static void max96752f_panel_unprepare(struct rockchip_panel *panel)
