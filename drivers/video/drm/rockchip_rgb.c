@@ -258,13 +258,13 @@ static int rockchip_mcu_panel_send_cmds(struct display_state *state,
 	return 0;
 }
 
-static void rockchip_mcu_panel_prepare(struct rockchip_panel *panel)
+static int rockchip_mcu_panel_prepare(struct rockchip_panel *panel)
 {
 	struct rockchip_mcu_panel *mcu_panel = to_rockchip_mcu_panel(panel);
 	int ret;
 
 	if (mcu_panel->prepared)
-		return;
+		return 0;
 
 	if (dm_gpio_is_valid(&mcu_panel->enable_gpio))
 		dm_gpio_set_value(&mcu_panel->enable_gpio, 1);
@@ -286,11 +286,14 @@ static void rockchip_mcu_panel_prepare(struct rockchip_panel *panel)
 
 	if (mcu_panel->desc->init_seq) {
 		ret = rockchip_mcu_panel_send_cmds(panel->state, mcu_panel->desc->init_seq);
-		if (ret)
+		if (ret) {
 			printf("failed to send mcu panel init cmds: %d\n", ret);
+			return ret;
+		}
 	}
 
 	mcu_panel->prepared = true;
+	return 0;
 }
 
 static void rockchip_mcu_panel_unprepare(struct rockchip_panel *panel)
