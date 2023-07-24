@@ -36,6 +36,7 @@
 #include <android_avb/rk_avb_ops_user.h>
 #include <dm/uclass-internal.h>
 #include <dm/root.h>
+#include <dm/device-internal.h>
 #include <power/charge_display.h>
 #include <power/regulator.h>
 #include <optee_include/OpteeClientInterface.h>
@@ -446,6 +447,13 @@ static void scan_run_cmd(void)
 	}
 }
 
+static void lt9211c_init(void)
+{
+	struct udevice *dev;
+	uclass_get_device_by_driver(UCLASS_VIDEO,
+			DM_GET_DRIVER(lt9211c), &dev);
+}
+
 int board_late_init(void)
 {
 #ifdef CONFIG_ROCKCHIP_SET_ETHADDR
@@ -478,6 +486,7 @@ int board_late_init(void)
 #ifdef CONFIG_AMP
 	amp_cpus_on();
 #endif
+	lt9211c_init();
 	return rk_board_late_init();
 }
 
