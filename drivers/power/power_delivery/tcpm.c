@@ -165,7 +165,7 @@
 
 #define GENERATE_ENUM(e)	e
 #define GENERATE_STRING(s)	#s
-#define TCPM_POLL_EVENT_TIME_OUT 2000
+#define TCPM_POLL_EVENT_TIME_OUT 5000
 
 enum tcpm_state {
 	FOREACH_STATE(GENERATE_ENUM)
@@ -3478,7 +3478,7 @@ void tcpm_poll_event(struct tcpm_port *port)
 
 		port->tcpc->poll_event(port->tcpc);
 		port->poll_event_cnt++;
-		udelay(500);
+		udelay(100);
 	}
 
 	/*

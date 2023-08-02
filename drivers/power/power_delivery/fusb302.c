@@ -8,9 +8,11 @@
 #include <dm.h>
 #include <i2c.h>
 #include <asm/gpio.h>
+#include <boot_rkimg.h>
 #include <power/power_delivery/tcpm.h>
 #include <power/power_delivery/power_delivery.h>
 #include "fusb302_reg.h"
+#include <power/fuel_gauge.h>
 
 /*
  * When the device is SNK, BC_LVL interrupt is used to monitor cc pins
@@ -50,6 +52,23 @@ static const u8 rd_mda_value[] = {
 
 #define LOG_BUFFER_ENTRIES	1024
 #define LOG_BUFFER_ENTRY_SIZE	128
+
+struct charge_animation_priv {
+       struct udevice *pmic;
+       struct udevice *fg;
+       struct udevice *charger;
+       struct udevice *rtc;
+#ifdef CONFIG_LED
+       struct udevice *led_charging;
+       struct udevice *led_full;
+#endif
+       const struct charge_image *image;
+       int image_num;
+
+       int auto_wakeup_key_state;
+       ulong auto_screen_off_timeout;  /* ms */
+       ulong suspend_delay_timeout;    /* ms */
+};
 
 struct fusb302_chip {
 	struct udevice *udev;
@@ -248,6 +267,9 @@ static int tcpm_init(struct tcpc_dev *dev)
 						 tcpc_dev);
 	int ret = 0;
 	u8 data;
+	struct udevice *charge_udev = NULL;
+	struct charge_animation_priv *priv = NULL;
+	struct udevice *fg = NULL;
 
 	ret = fusb302_sw_reset(chip);
 	if (ret)
@@ -261,10 +283,25 @@ static int tcpm_init(struct tcpc_dev *dev)
 	ret = fusb302_set_power_mode(chip, FUSB_REG_POWER_PWR_ALL);
 	if (ret)
 		return ret;
+	mdelay(10);
 	ret = fusb302_i2c_read(chip, FUSB_REG_STATUS0, &data);
 	if (ret)
 		return ret;
-	chip->vbus_present = !!(data & FUSB_REG_STATUS0_VBUSOK);
+
+	/*find uboot charge udev,check whether there is a battery by using the uboot charging frame*/
+	uclass_first_device(UCLASS_CHARGE_DISPLAY, &charge_udev);
+	if (charge_udev) {
+	        priv = dev_get_priv(charge_udev);
+	        fg = priv->fg;
+	        if (fg)
+	                ret = fuel_gauge_bat_is_exist(fg);
+	}
+
+	if(ret == 1)
+	        chip->vbus_present = 0;
+	else
+	        chip->vbus_present = !!(data & FUSB_REG_STATUS0_VBUSOK);
+
 	ret = fusb302_i2c_read(chip, FUSB_REG_DEVICE_ID, &data);
 	if (ret)
 		return ret;
@@ -948,11 +985,15 @@ static int fusb302_enter_low_power_mode(struct tcpc_dev *dev,
 						 tcpc_dev);
 	int ret = 0;
 	unsigned int reg;
+	int boot_mode;
 
 	ret = fusb302_mask_interrupt(chip);
 	if (ret)
 		return ret;
-	if (attached && pd_capable)
+	boot_mode = rockchip_get_boot_mode();
+	printf("%s:get boot_mode=%d\n",__func__,boot_mode);
+	//force set reg as FUSB_REG_POWER_PWR_MEDIUM when soft reboot
+	if ((attached && pd_capable) || (boot_mode == 0))
 		reg = FUSB_REG_POWER_PWR_MEDIUM;
 	else if (attached)
 		reg = FUSB_REG_POWER_PWR_LOW;
