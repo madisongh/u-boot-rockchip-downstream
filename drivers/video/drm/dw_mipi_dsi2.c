@@ -1288,6 +1288,7 @@ static int dw_mipi_dsi2_host_attach(struct mipi_dsi_host *host,
 	dsi2->channel = device->channel;
 	dsi2->format = device->format;
 	dsi2->mode_flags = device->mode_flags;
+	device->id = dsi2->id;
 	dsi2->device = device;
 
 	return 0;
