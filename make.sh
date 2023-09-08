@@ -621,7 +621,13 @@ function pack_uboot_itb_image()
 		fi
 	fi
 
-	./tools/mkimage -f u-boot.its -E u-boot.itb >/dev/null 2>&1
+	if grep -q '^CONFIG_SPL_FIT_SIGNATURE=y' .config ; then
+	    ./tools/mkimage -f u-boot.its -k keys -K spl/u-boot-spl.dtb -E -r u-boot.itb
+	    # Reconstruct SPL bin with the updated DTB containing the RSA key info
+	    cat spl/u-boot-spl-nodtb.bin spl/u-boot-spl.dtb > spl/u-boot-spl.bin
+	else
+	    ./tools/mkimage -f u-boot.its -E u-boot.itb
+	fi
 	echo "pack u-boot.itb okay! Input: ${INI}"
 	echo
 }
