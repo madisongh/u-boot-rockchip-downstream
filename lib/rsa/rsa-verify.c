@@ -395,7 +395,7 @@ static int rsa_verify_key(struct image_sign_info *info,
 		return -EINVAL;
 	}
 
-	debug("Checksum algorithm: %s", checksum->name);
+	debug("Checksum algorithm: %s\n", checksum->name);
 
 	/* Sanity check for stack size */
 	if (sig_len > RSA_MAX_SIG_BITS / 8) {

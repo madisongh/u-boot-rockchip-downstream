@@ -192,8 +192,9 @@ struct image_region *fit_region_make_list(const void *fit,
 }
 
 static int fit_image_setup_verify(struct image_sign_info *info,
-		const void *fit, int noffset, int required_keynode,
-		char **err_msgp)
+				  const void *fit, int noffset,
+				  const void *key_blob, int required_keynode,
+				  char **err_msgp)
 {
 	char *algo_name;
 	const char *padding_name;
@@ -215,7 +216,7 @@ static int fit_image_setup_verify(struct image_sign_info *info,
 	info->checksum = image_get_checksum_algo(algo_name);
 	info->crypto = image_get_crypto_algo(algo_name);
 	info->padding = image_get_padding_algo(padding_name);
-	info->fdt_blob = gd_fdt_blob();
+	info->fdt_blob = key_blob;
 	info->required_keynode = required_keynode;
 	printf("%s:%s", algo_name, info->keyname);
 
@@ -228,7 +229,8 @@ static int fit_image_setup_verify(struct image_sign_info *info,
 }
 
 int fit_image_check_sig(const void *fit, int noffset, const void *data,
-		size_t size, int required_keynode, char **err_msgp)
+			size_t size, const void *key_blob, int required_keynode,
+			char **err_msgp)
 {
 	struct image_sign_info info;
 	struct image_region region;
@@ -236,8 +238,8 @@ int fit_image_check_sig(const void *fit, int noffset, const void *data,
 	int fit_value_len;
 
 	*err_msgp = NULL;
-	if (fit_image_setup_verify(&info, fit, noffset, required_keynode,
-				   err_msgp))
+	if (fit_image_setup_verify(&info, fit, noffset, key_blob,
+				   required_keynode, err_msgp))
 		return -1;
 
 	if (fit_image_hash_get_value(fit, noffset, &fit_value,
@@ -272,8 +274,8 @@ static int fit_image_verify_sig(const void *fit, int image_noffset,
 
 		if (!strncmp(name, FIT_SIG_NODENAME,
 			     strlen(FIT_SIG_NODENAME))) {
-			ret = fit_image_check_sig(fit, noffset, data,
-							size, -1, &err_msg);
+			ret = fit_image_check_sig(fit, noffset, data, size,
+						  sig_blob, -1, &err_msg);
 			if (ret) {
 				puts("- ");
 			} else {
@@ -338,26 +340,66 @@ int fit_image_verify_required_sigs(const void *fit, int image_noffset,
 	return 0;
 }
 
-int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
-			 char **err_msgp)
+/**
+ * fit_config_check_sig() - Check the signature of a config
+ *
+ * Here we are looking at a particular signature that needs verification (here
+ * signature-1):
+ *
+ *	configurations {
+ *		default = "conf-1";
+ *		conf-1 {
+ *			kernel = "kernel-1";
+ *			fdt = "fdt-1";
+ *			signature-1 {
+ *				algo = "sha1,rsa2048";
+ *				value = <...conf 1 signature...>;
+ *			};
+ *		};
+ *
+ * @fit: FIT to check
+ * @noffset: Offset of the signature node being checked (e.g.
+ *	 /configurations/conf-1/signature-1)
+ * @conf_noffset: Offset of configuration node (e.g. /configurations/conf-1)
+ * @key_blob: Blob containing the keys to check against
+ * @required_keynode:	Offset in @key_blob of the required key node,
+ *			if any. If this is given, then the configuration wil not
+ *			pass verification unless that key is used. If this is
+ *			-1 then any signature will do.
+ * @err_msgp:		In the event of an error, this will be pointed to a
+ *			help error string to display to the user.
+ * Return: 0 if all verified ok, <0 on error
+ */
+static int fit_config_check_sig(const void *fit, int noffset, int conf_noffset,
+				const void *key_blob, int required_keynode,
+				char **err_msgp)
 {
-	char * const exc_prop[] = {"data"};
+	static char * const exc_prop[] = {
+		FIT_DATA_PROP,
+		FIT_DATA_SIZE_PROP,
+		FIT_DATA_POSITION_PROP,
+		FIT_DATA_OFFSET_PROP,
+	};
+
 	const char *prop, *end, *name;
 	struct image_sign_info info;
 	const uint32_t *strings;
+	const char *config_name;
 	uint8_t *fit_value;
 	int fit_value_len;
+	bool found_config;
 	int max_regions;
 	int i, prop_len;
 	char path[200];
 	int count;
 
-	debug("%s: fdt=%p, conf='%s', sig='%s'\n", __func__, gd_fdt_blob(),
+	config_name = fit_get_name(fit, conf_noffset, NULL);
+	debug("%s: fdt=%p, conf='%s', sig='%s'\n", __func__, key_blob,
 	      fit_get_name(fit, noffset, NULL),
-	      fit_get_name(gd_fdt_blob(), required_keynode, NULL));
+	      fit_get_name(key_blob, required_keynode, NULL));
 	*err_msgp = NULL;
-	if (fit_image_setup_verify(&info, fit, noffset, required_keynode,
-				   err_msgp))
+	if (fit_image_setup_verify(&info, fit, noffset, key_blob,
+				   required_keynode, err_msgp))
 		return -1;
 
 	if (fit_image_hash_get_value(fit, noffset, &fit_value,
@@ -377,6 +419,11 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 		return -1;
 	}
 
+	if (prop && prop_len > 0 && prop[prop_len - 1] != '\0') {
+		*err_msgp = "hashed-nodes property must be null-terminated";
+		return -1;
+	}
+
 	/* Add a sanity check here since we are using the stack */
 	if (count > IMAGE_MAX_HASHED_NODES) {
 		*err_msgp = "Number of hashed nodes exceeds maximum";
@@ -387,23 +434,34 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 	char *node_inc[count];
 
 	debug("Hash nodes (%d):\n", count);
+	found_config = false;
 	for (name = prop, i = 0; name < end; name += strlen(name) + 1, i++) {
 		debug("   '%s'\n", name);
 		node_inc[i] = (char *)name;
+		if (!strncmp(FIT_CONFS_PATH, name, strlen(FIT_CONFS_PATH)) &&
+		    name[sizeof(FIT_CONFS_PATH) - 1] == '/' &&
+		    !strcmp(name + sizeof(FIT_CONFS_PATH), config_name)) {
+			debug("      (found config node %s)", config_name);
+			found_config = true;
+		}
+	}
+	if (!found_config) {
+		*err_msgp = "Selected config not in hashed nodes";
+		return -1;
 	}
 
 	/*
 	 * Each node can generate one region for each sub-node. Allow for
-	 * 7 sub-nodes (hash@1, signature@1, etc.) and some extra.
+	 * 7 sub-nodes (hash-1, signature-1, etc.) and some extra.
 	 */
 	max_regions = 20 + count * 7;
 	struct fdt_region fdt_regions[max_regions];
 
 	/* Get a list of regions to hash */
 	count = fdt_find_regions(fit, node_inc, count,
-			exc_prop, ARRAY_SIZE(exc_prop),
-			fdt_regions, max_regions - 1,
-			path, sizeof(path), 0);
+				 exc_prop, ARRAY_SIZE(exc_prop),
+				 fdt_regions, max_regions - 1,
+				 path, sizeof(path), 0);
 	if (count < 0) {
 		*err_msgp = "Failed to hash configuration";
 		return -1;
@@ -420,8 +478,11 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 	/* Add the strings */
 	strings = fdt_getprop(fit, noffset, "hashed-strings", NULL);
 	if (strings) {
-		fdt_regions[count].offset = fdt_off_dt_strings(fit) +
-				fdt32_to_cpu(strings[0]);
+		/*
+		 * The strings region offset must be a static 0x0.
+		 * This is set in tool/image-host.c
+		 */
+		fdt_regions[count].offset = fdt_off_dt_strings(fit);
 		fdt_regions[count].size = fdt32_to_cpu(strings[1]);
 		count++;
 	}
@@ -435,7 +496,7 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 		*err_msgp = "Verification failed";
 		return -1;
 	}
-	/* Get the secure flag here and write the secure data and the secure flag */
+
 #if !defined(USE_HOSTCC)
 #if defined(CONFIG_SPL_BUILD) && defined(CONFIG_SPL_FIT_HW_CRYPTO) && \
     defined(CONFIG_SPL_ROCKCHIP_SECURE_OTP)
@@ -460,7 +521,8 @@ static int fit_config_verify_sig(const void *fit, int conf_noffset,
 
 		if (!strncmp(name, FIT_SIG_NODENAME,
 			     strlen(FIT_SIG_NODENAME))) {
-			ret = fit_config_check_sig(fit, noffset, sig_offset,
+			ret = fit_config_check_sig(fit, noffset, conf_noffset,
+						   sig_blob, sig_offset,
 						   &err_msg);
 			if (ret) {
 				puts("- ");
