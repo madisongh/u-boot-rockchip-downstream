@@ -61,7 +61,6 @@ obj-${CONFIG_ROCKCHIP_EINK} += rk_eink/
 
 obj-y += bridge/
 obj-y += sunxi/
-obj-y  += lt9211c/
 endif
 
 obj-${CONFIG_DRM_ROCKCHIP} += drm/
