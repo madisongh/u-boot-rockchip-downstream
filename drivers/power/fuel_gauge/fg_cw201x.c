@@ -15,6 +15,7 @@
 #include <power/battery.h>
 #include <power/fuel_gauge.h>
 #include <power/pmic.h>
+#include <linux/delay.h>
 #include "fg_regs.h"
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -38,12 +39,51 @@ DECLARE_GLOBAL_DATA_PTR;
 #define CONFIG_UPDATE_FLG	(0x1 << 1)
 #define ATHD			(0x0 << 3)
 
+// cw2017
+#define FUEL_GAUGE_CW2017              true
+#define CW2017_SIZE_BATINFO            80
+
+#define CW2017_REG_VERSION             0x00
+#define CW2017_REG_VCELL_H             0x02
+#define CW2017_REG_SOC_INT             0x04
+#define CW2017_REG_MODE_CONFIG         0x08
+#define CW2017_REG_BATINFO             0x10
+#define CW2017_REG_SOC_ALERT           0x0B
+#define CW2017_REG_TEMP_MAX		       0x0C
+#define CW2017_REG_TEMP_MIN		       0x0D
+
+#define CW2017_MODE_SLEEP              0x30
+#define CW2017_MODE_NORMAL             0x00
+#define CW2017_MODE_DEFAULT            0xF0
+
+#define CW2017_ALERT_DEFAULT			0x0A
+
+#define CW2017_CONFIG_UPDATE_FLG 0x80
+#define NO_START_VERSION                0xA0
+
+#define CW2017_INVALID_PARAM			0xFFFF
+
+#define CW_DEBUG_FALG 			false
+#define CW2017_DBUG(fmt, arg...)        \
+	({                                    \
+		if(CW_DEBUG_FALG){              \
+			printf(fmt,##arg);  \
+		}                          \
+	})
+
 enum charger_type {
 	CHARGER_TYPE_NO = 0,
 	CHARGER_TYPE_USB,
 	CHARGER_TYPE_AC,
 	CHARGER_TYPE_DC,
 	CHARGER_TYPE_UNDEF,
+};
+
+enum parity_check_type {
+	PARITY_CHECK_SUCCESS = 0,
+	PARITY_CHECK_FAIL_SUB_ONE,
+	PARITY_CHECK_FAIL_ADD_TWO,
+	PARITY_CHECK_FAIL,
 };
 
 struct cw201x_info {
@@ -59,6 +99,11 @@ struct cw201x_info {
 	struct gpio_desc dc_det_gpio;
 	int dc_det_flag;
 	bool dual_cell;
+	int alert_level;
+	int temp_max;
+	int temp_min;
+	int max_voltage;
+	int min_voltage;
 };
 
 static u8 cw201x_read(struct cw201x_info *cw201x, u8 reg)
@@ -147,6 +192,45 @@ static int cw201x_parse_config_info(struct cw201x_info *cw201x)
 		debug("%#x ", cw201x->cw_bat_config_info[i]);
 		if ((i+1) % 8 == 0)
 			debug("\n");
+	}
+
+	cw201x->alert_level = dev_read_u32_default(dev,"cellwise,alert-level",
+	                                               CW2017_INVALID_PARAM);
+	CW2017_DBUG("cw2017,cw201x->alert_level: %d\n",cw201x->alert_level);
+	if(cw201x->alert_level == CW2017_INVALID_PARAM) {
+		debug("fdtdec_get cellwise,alert-level fail\n");
+	}
+
+	cw201x->max_voltage = dev_read_u32_default(dev,
+	                             "firefly,battery-max-voltage",
+	                             CW2017_INVALID_PARAM);
+	CW2017_DBUG("cw2017,cw201x->check_voltage: %d\n",cw201x->max_voltage);
+	if(cw201x->max_voltage == CW2017_INVALID_PARAM) {
+		debug("fdtdec_get firefly,battery-max-voltage fail\n");
+	}
+
+	cw201x->min_voltage = dev_read_u32_default(dev,
+	                             "firefly,battery-min-voltage",
+	                             CW2017_INVALID_PARAM);
+	CW2017_DBUG("cw2017,cw201x->check_voltage: %d\n",cw201x->min_voltage);
+	if(cw201x->min_voltage == CW2017_INVALID_PARAM) {
+		debug("fdtdec_get firefly,battery-max-voltage fail\n");
+	}
+
+	cw201x->temp_max = dev_read_u32_default(dev,
+	                                "firefly,max-temp",
+	                                CW2017_INVALID_PARAM);
+	CW2017_DBUG("cw2017,cw201x->temp_max: %d\n",cw201x->temp_max);
+	if(cw201x->temp_max == CW2017_INVALID_PARAM) {
+		debug("fdtdec_get firefly,max-temp fail\n");
+	}
+
+	cw201x->temp_min = dev_read_u32_default(dev,
+	                                     "firefly,min-temp",
+	                                     CW2017_INVALID_PARAM);
+	CW2017_DBUG("cw2017,cw201x->temp_min: %d\n",cw201x->temp_min);
+	if(cw201x->temp_min == CW2017_INVALID_PARAM) {
+		debug("fdtdec_get firefly,min-temp fail\n");
 	}
 
 	return 0;
@@ -323,6 +407,7 @@ static int cw201x_get_soc(struct cw201x_info *cw201x)
 			break;
 	}
 	cw201x->capacity = cap;
+	CW2017_DBUG("the cw201x soc=%d\n", cap);
 
 	return cw201x->capacity;
 }
@@ -358,27 +443,276 @@ static int cw201x_capability(struct udevice *dev)
 	return FG_CAP_FUEL_GAUGE;
 }
 
+static int cw201x_get_version(struct cw201x_info *cw201x)
+{
+	u8 val = cw201x_read(cw201x, REG_VERSION);
+	return val;
+}
+
+static int cw2017_enable(struct cw201x_info *cw201x)
+{
+	u8 val = CW2017_MODE_DEFAULT;
+	cw201x_write(cw201x, CW2017_REG_MODE_CONFIG, val);
+	if(val < 0)
+		return val;
+	mdelay(20);
+	val = CW2017_MODE_SLEEP;
+	cw201x_write(cw201x, CW2017_REG_MODE_CONFIG, val);
+	if(val < 0)
+		return val;
+	mdelay(20);
+	val = CW2017_MODE_NORMAL;
+	cw201x_write(cw201x, CW2017_REG_MODE_CONFIG, val);
+	if(val < 0)
+		return val;
+	mdelay(20);
+
+	return 0;
+}
+
+/*CW2017 update profile function, Often called during initialization*/
+static int cw2017_update_config_info(struct cw201x_info *cw201x)
+{
+	int ret = 0;
+	u8 i = 0;
+	u8 reg_val = 0;
+	int count = 0;
+
+	/* update new battery info */
+	for(i = 0; i < CW2017_SIZE_BATINFO; i++) {
+		reg_val = (u8)cw201x->cw_bat_config_info[i];
+		ret = cw201x_write(cw201x, CW2017_REG_BATINFO + i, reg_val);
+		if(ret < 0)
+			return ret;
+		//printf("w reg[%02X] = %02X\n", REG_BATINFO +i, reg_val);
+	}
+
+	reg_val = cw201x_read(cw201x, CW2017_REG_SOC_ALERT);
+	if(reg_val < 0)
+		return reg_val;
+
+	/* set UPDATE_FLAG */
+	reg_val = 0;
+	reg_val |= CW2017_CONFIG_UPDATE_FLG;
+	if(cw201x->alert_level != CW2017_INVALID_PARAM)
+		reg_val |= cw201x->alert_level;
+	else
+		reg_val |= CW2017_ALERT_DEFAULT;
+	ret = cw201x_write(cw201x, CW2017_REG_SOC_ALERT, reg_val);
+	if(ret < 0)
+		return ret;
+
+	/*set battery work temperature*/
+	if(cw201x->temp_max != CW2017_INVALID_PARAM) {
+		reg_val = (cw201x->temp_max+40)*2;
+		cw201x_write(cw201x, CW2017_REG_TEMP_MAX, reg_val);
+	}
+	if(cw201x->temp_min != CW2017_INVALID_PARAM) {
+		reg_val = (cw201x->temp_min+40)*2;
+		cw201x_write(cw201x, CW2017_REG_TEMP_MIN, reg_val);
+	}
+
+	ret = cw2017_enable(cw201x);
+	if(ret < 0)
+		return ret;
+
+	while(cw201x_get_version(cw201x) == NO_START_VERSION) {
+		mdelay(20);
+		count++;
+		if(count > 30)
+			break;
+	}
+
+	/*Wait for cw2017 to read the correct soc*/
+	for (i = 0; i < 30; i++) {
+		mdelay(100);
+		cw201x_read(cw201x, 0x01);
+		reg_val = cw201x_read(cw201x, CW2017_REG_SOC_INT);
+		if (reg_val < 0) {
+			return reg_val;
+		} else if (reg_val <= 100 ) {
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int parity_check(unsigned int val)
+{
+	unsigned int i = 0 ,bit_0 = 0,bit_1 = 0;
+	bit_0 = 0x1 & val ;
+	bit_1 = 0x2 & val ;
+
+	while(val)
+	{
+		val = val & (val-1);
+		i++;
+	}
+
+	if( (i%2 == 1) && (bit_0 == 1) )
+		return PARITY_CHECK_SUCCESS;
+
+	if( (i%2 == 0) && (bit_0 == 0) )
+		return PARITY_CHECK_SUCCESS;
+
+	if( (i%2 == 1) && (bit_0 == 0) ) {
+		if(bit_1 == 1)
+			return PARITY_CHECK_FAIL_SUB_ONE;
+		else
+			return PARITY_CHECK_FAIL_ADD_TWO;
+	}
+
+	if( (i%2 == 0) && (bit_0 == 1) )
+		return PARITY_CHECK_FAIL_SUB_ONE;
+
+	return PARITY_CHECK_FAIL;
+}
+
+/*check exist battery*/
+static int cw2017_set_battery_exist(struct cw201x_info *cw201x)
+{
+	int ret,i;
+	unsigned int reg_val = 0,voltage = 0;
+
+	if(cw201x->max_voltage == CW2017_INVALID_PARAM ||
+		cw201x->min_voltage == CW2017_INVALID_PARAM)
+		return -1;
+
+	for (i = 0; i < 1000; i++) {
+		voltage = cw201x_get_vol(cw201x);
+		if (voltage < cw201x->max_voltage+50 && voltage > 0)
+			break;
+		mdelay(10);
+	}
+	if(i==1000)
+		return -2;
+
+	CW2017_DBUG("cw2017, now voltage :%d\n",voltage);
+	reg_val = cw201x_read(cw201x, CW2017_REG_TEMP_MIN);
+	CW2017_DBUG("cw2017, now temp_min :%d\n",reg_val);
+	if (voltage < cw201x->min_voltage) {
+		printf("cw2017, no battery!\n");
+		ret = parity_check(reg_val);
+		CW2017_DBUG("parity_check ret :%d\n",ret);
+		if(ret == PARITY_CHECK_SUCCESS) {
+			reg_val--;
+			CW2017_DBUG("cw2017, set temp_min :%d\n",reg_val);
+			cw201x_write(cw201x, CW2017_REG_TEMP_MIN, reg_val);
+		}
+	} else {
+		printf("cw2017, have battery\n");
+		ret = parity_check(reg_val);
+		CW2017_DBUG("parity_check ret :%d\n",ret);
+		if(ret == PARITY_CHECK_FAIL)
+			CW2017_DBUG("parity_check Fail!\n");
+		if(ret == PARITY_CHECK_FAIL_SUB_ONE) {
+			reg_val--;
+			CW2017_DBUG("cw2017, set temp_min :%d\n",reg_val);
+			cw201x_write(cw201x, CW2017_REG_TEMP_MIN, reg_val);
+		}
+		if(ret == PARITY_CHECK_FAIL_ADD_TWO) {
+			reg_val += 2;
+			CW2017_DBUG("cw2017, set temp_min :%d\n",reg_val);
+			cw201x_write(cw201x, CW2017_REG_TEMP_MIN, reg_val);
+		}
+	}
+
+	return 0;
+}
+
+static int cw2017_check_battery(struct udevice *dev)
+{
+	int ret;
+	unsigned int reg_val = 0;
+	struct cw201x_info *cw201x = dev_get_priv(dev);
+	
+	reg_val = cw201x_read(cw201x, CW2017_REG_TEMP_MIN);
+	ret = parity_check(reg_val);
+	if(ret == PARITY_CHECK_SUCCESS)
+		return 1;
+	else
+		return 0;
+}
+
+/*CW2017 init function, Often called during initialization*/
+static int cw2017_init(struct cw201x_info *cw201x)
+{
+    int ret;
+    int i;
+    u8 reg_val = CW2017_MODE_NORMAL;
+	u8 config_flg = 0;
+	CW2017_DBUG("cw2017_init!\n");
+
+	reg_val = cw201x_read(cw201x, CW2017_REG_MODE_CONFIG);
+	if(reg_val < 0)
+		return reg_val;
+
+	config_flg = cw201x_read(cw201x, CW2017_REG_SOC_ALERT);
+	if(config_flg < 0)
+		return config_flg;
+
+	if(reg_val != CW2017_MODE_NORMAL || ((config_flg & CW2017_CONFIG_UPDATE_FLG) == 0x00)) {
+		printf("cw2017,no battery profile!\n");
+		ret = cw2017_update_config_info(cw201x);
+		if(ret < 0)
+			return ret;
+
+		ret = cw2017_set_battery_exist(cw201x);
+		if(ret < 0)
+			printf("set battery err : %d\n",ret);
+
+	} else {
+		printf("cw2017,have battery profile!\n");
+		for(i = 0; i < CW2017_SIZE_BATINFO; i++) {
+			reg_val = cw201x_read(cw201x, CW2017_REG_BATINFO + i);
+			if(reg_val < 0)
+				return reg_val;
+
+			//printf("r reg[%02X] = %02X\n", REG_BATINFO +i, reg_val);
+			if((u8)cw201x->cw_bat_config_info[i] != reg_val)
+			{
+				break;
+			}
+		}
+		if(i != CW2017_SIZE_BATINFO) {
+			//"update flag for new battery info need set"
+			ret = cw2017_update_config_info(cw201x);
+			if(ret < 0)
+				return ret;
+		}
+	}
+	printf("cw2017 init success!\n");
+	return 0;
+}
+
 static struct dm_fuel_gauge_ops cw201x_fg_ops = {
 	.capability = cw201x_capability,
 	.get_soc = cw201x_update_get_soc,
 	.get_voltage = cw201x_update_get_voltage,
 	.get_current = cw201x_update_get_current,
 	.get_chrg_online = cw201x_update_get_chrg_online,
+	.bat_is_exist = cw2017_check_battery,
 };
 
 static int cw201x_fg_cfg(struct cw201x_info *cw201x)
 {
+
 	u8 val = MODE_SLEEP;
 	int i;
 
-	if ((val & MODE_SLEEP_MASK) == MODE_SLEEP) {
-		val = MODE_NORMAL;
-		cw201x_write(cw201x, REG_MODE, val);
-	}
+	if(FUEL_GAUGE_CW2017) {
+		cw2017_init(cw201x);
+	} else {
+		if ((val & MODE_SLEEP_MASK) == MODE_SLEEP) {
+			val = MODE_NORMAL;
+			cw201x_write(cw201x, REG_MODE, val);
+		}
 
-	for (i = 0; i < 64; i++) {
-		cw201x_write(cw201x, REG_BATINFO + i,
-			     (u8)cw201x->cw_bat_config_info[i]);
+		for (i = 0; i < 64; i++) {
+			cw201x_write(cw201x, REG_BATINFO + i,
+					(u8)cw201x->cw_bat_config_info[i]);
+		}
 	}
 
 	return 0;
@@ -400,6 +734,7 @@ static int cw201x_fg_probe(struct udevice *dev)
 static const struct udevice_id cw201x_ids[] = {
 	{ .compatible = "cw201x" },
 	{ .compatible = "cellwise,cw2015" },
+	{ .compatible = "cellwise,cw2017" },
 	{ }
 };
 

@@ -33,7 +33,6 @@
 #include <rk_eink.h>
 #endif
 DECLARE_GLOBAL_DATA_PTR;
-
 #define IMAGE_RECALC_IDX				-1
 #define IMAGE_SOC_100_IDX(n)			((n) - 2)
 #define IMAGE_LOWPOWER_IDX(n)			((n) - 1)
@@ -191,10 +190,11 @@ static void pmics_resume(void)
 static int charge_animation_ofdata_to_platdata(struct udevice *dev)
 {
 	struct charge_animation_pdata *pdata = dev_get_platdata(dev);
-
 	/* charge mode */
 	pdata->uboot_charge =
 		dev_read_u32_default(dev, "rockchip,uboot-charge-on", 0);
+	pdata->uboot_pd_charge =
+		dev_read_u32_default(dev, "firefly,uboot-pd-charge", 0);
 	pdata->android_charge =
 		dev_read_u32_default(dev, "rockchip,android-charge-on", 0);
 
@@ -499,7 +499,6 @@ static int charge_extrem_low_power(struct udevice *dev)
 	struct charge_animation_priv *priv = dev_get_priv(dev);
 	struct udevice *fg = priv->fg;
 	int voltage, soc, charging = 1;
-	int first_poll_fg = 1;
 	static int timer_initialized;
 
 	voltage = fuel_gauge_get_voltage(fg);
@@ -507,11 +506,6 @@ static int charge_extrem_low_power(struct udevice *dev)
 		return -EINVAL;
 
 	while (voltage < pdata->low_power_voltage + 50) {
-		if (!first_poll_fg)
-			mdelay(FUEL_GAUGE_POLL_MS);
-
-		first_poll_fg = 0;
-
 		/* Check charger online */
 		charging = fg_charger_get_chrg_online(dev);
 		if (charging <= 0) {
@@ -641,7 +635,7 @@ static int charge_animation_show(struct udevice *dev)
 			printf("Not charging and low power, Shutdown...\n");
 			show_idx = IMAGE_LOWPOWER_IDX(image_num);
 			charge_show_bmp(image[show_idx].name);
-
+			mdelay(1000);
 			sys_shutdown(dev);
 		}
 	}
@@ -1066,8 +1060,11 @@ static const struct dm_charge_display_ops charge_animation_ops = {
 static int charge_animation_probe(struct udevice *dev)
 {
 	struct charge_animation_priv *priv = dev_get_priv(dev);
+	struct charge_animation_pdata *pdata = dev_get_platdata(dev);
+
 	int ret, soc;
 
+	
 	/* Get PMIC: used for power off system  */
 	ret = uclass_get_device(UCLASS_PMIC, 0, &priv->pmic);
 	if (ret) {
@@ -1078,16 +1075,20 @@ static int charge_animation_probe(struct udevice *dev)
 		return ret;
 	}
 
-	/* Get fuel gauge and charger(If need) */
-	ret = fg_charger_get_device(&priv->fg, &priv->charger);
-	if (ret) {
-		if (ret == -ENODEV)
-			debug("Can't find FG\n");
-		else
-			debug("Get UCLASS FG failed: %d\n", ret);
-		return ret;
+	if(pdata->uboot_pd_charge)  /* Get fuel gauge and charger(If need) */
+	 	uclass_get_device_by_name(UCLASS_PD, "fusb302_pd", &priv->charger);
+	else
+	{
+		/* Get fuel gauge and charger(If need) */
+		ret = fg_charger_get_device(&priv->fg, &priv->charger);
+			if (ret) {
+				if (ret == -ENODEV)
+					debug("Can't find FG\n");
+			else
+				debug("Get UCLASS FG failed: %d\n", ret);
+			return ret;}
 	}
-
+	
 	/* Get rtc: used for power on */
 	ret = uclass_get_device(UCLASS_RTC, 0, &priv->rtc);
 	if (ret) {

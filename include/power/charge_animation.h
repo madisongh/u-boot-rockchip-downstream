@@ -15,6 +15,7 @@ struct regulator_mem {
 struct charge_animation_pdata {
 	int android_charge;	/* android charge, 1: enable, 0: disable */
 	int uboot_charge;	/* u-boot charge, 1: enable, 0: disable */
+	int uboot_pd_charge;
 
 	int auto_exit_charge;	/* energy enough auto exit uboot charging*/
 	int exit_charge_voltage;/* lowest voltage allowed to exit charging */
