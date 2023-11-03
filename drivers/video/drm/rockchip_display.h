@@ -7,11 +7,18 @@
 #ifndef _ROCKCHIP_DISPLAY_H
 #define _ROCKCHIP_DISPLAY_H
 
+#ifdef CONFIG_SPL_BUILD
+#include <linux/hdmi.h>
+#include <linux/media-bus-format.h>
+#else
 #include <bmp_layout.h>
-#include <drm_modes.h>
 #include <edid.h>
+#endif
+#include <drm_modes.h>
 #include <dm/ofnode.h>
 #include <drm/drm_dsc.h>
+#include <spl_display.h>
+#include <clk.h>
 
 /*
  * major: IP major version, used for IP structure
@@ -150,6 +157,7 @@ struct crtc_state {
 	void *private;
 	ofnode node;
 	struct device_node *ports_node; /* if (ports_node) it's vop2; */
+	struct clk dclk;
 	int crtc_id;
 
 	int format;
@@ -208,6 +216,7 @@ struct connector_state {
 	struct overscan overscan;
 	u8 edid[EDID_SIZE * 4];
 	int bus_format;
+	u32 bus_flags;
 	int output_mode;
 	int type;
 	int output_if;
@@ -282,6 +291,7 @@ struct display_state {
 	int is_enable;
 	bool is_klogo_valid;
 	bool force_output;
+	bool enabled_at_spl;
 	struct drm_display_mode force_mode;
 	u32 force_bus_format;
 };
@@ -295,7 +305,11 @@ struct base2_disp_info *rockchip_get_disp_info(int type, int id);
 void drm_mode_max_resolution_filter(struct hdmi_edid_data *edid_data,
 				    struct vop_rect *max_output);
 unsigned long get_cubic_lut_buffer(int crtc_id);
-int rockchip_ofnode_get_display_mode(ofnode node, struct drm_display_mode *mode);
+int rockchip_ofnode_get_display_mode(ofnode node, struct drm_display_mode *mode,
+				     u32 *bus_flags);
+void rockchip_display_make_crc32_table(void);
+uint32_t rockchip_display_crc32c_cal(unsigned char *data, int length);
+void drm_mode_set_crtcinfo(struct drm_display_mode *p, int adjust_flags);
 
 int display_rect_calc_hscale(struct display_rect *src, struct display_rect *dst,
 			     int min_hscale, int max_hscale);
@@ -303,5 +317,12 @@ int display_rect_calc_vscale(struct display_rect *src, struct display_rect *dst,
 			     int min_vscale, int max_vscale);
 const struct device_node *
 rockchip_of_graph_get_endpoint_by_regs(ofnode node, int port, int endpoint);
+uint32_t rockchip_drm_get_cycles_per_pixel(uint32_t bus_format);
+char* rockchip_get_output_if_name(u32 output_if, char *name);
 
+#ifdef CONFIG_SPL_BUILD
+int rockchip_spl_vop_probe(struct crtc_state *crtc_state);
+int rockchip_spl_dw_hdmi_probe(struct connector_state *conn_state);
+int inno_spl_hdmi_phy_probe(struct display_state *state);
+#endif
 #endif

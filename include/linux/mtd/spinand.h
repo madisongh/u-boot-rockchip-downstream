@@ -156,6 +156,7 @@
 /* feature register */
 #define REG_BLOCK_LOCK		0xa0
 #define BL_ALL_UNLOCKED		0x00
+#define HWP_EN			0x02 /* Skyhigh feature, Hardware write protection */
 
 /* configuration register */
 #define REG_CFG			0xb0
@@ -252,6 +253,7 @@ extern const struct spinand_manufacturer toshiba_spinand_manufacturer;
 extern const struct spinand_manufacturer winbond_spinand_manufacturer;
 extern const struct spinand_manufacturer dosilicon_spinand_manufacturer;
 extern const struct spinand_manufacturer esmt_spinand_manufacturer;
+extern const struct spinand_manufacturer xincun_spinand_manufacturer;
 extern const struct spinand_manufacturer xtx_spinand_manufacturer;
 extern const struct spinand_manufacturer hyf_spinand_manufacturer;
 extern const struct spinand_manufacturer fmsh_spinand_manufacturer;

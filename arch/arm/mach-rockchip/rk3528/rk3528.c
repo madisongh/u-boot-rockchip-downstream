@@ -5,6 +5,7 @@
  */
 #include <common.h>
 #include <dm.h>
+#include <misc.h>
 #include <asm/io.h>
 #include <asm/arch/cpu.h>
 #include <asm/arch/hardware.h>
@@ -21,6 +22,12 @@ DECLARE_GLOBAL_DATA_PTR;
 #define FW_DDR_MST14_REG	0x78
 #define FW_DDR_MST16_REG 	0x80
 #define FW_DDR_MST_REG		0xf0
+
+#define VENC_GRF_BASE		0xff320000
+#define VENC_GRF_CON1		0x4
+
+#define VPU_GRF_BASE		0xff340000
+#define VPU_GRF_CON4		0x14
 
 #define PMU_SGRF_BASE		0xff440000
 #define PMU_SGRF_SOC_CON4	0x10
@@ -378,6 +385,17 @@ int arch_cpu_init(void)
 #if defined(CONFIG_SPL_BUILD)
 	u32 val;
 
+	/*
+	 * Select clk_tx source as default for i2s2/i2s3
+	 * Set I2Sx_MCLK as input default
+	 *
+	 * It's safe to set mclk as input default to avoid high freq glitch
+	 * which may make devices work unexpected. And then enabled by
+	 * kernel stage or any state where user use it.
+	 */
+	writel(0x00020002, VPU_GRF_BASE + VPU_GRF_CON4);
+	writel(0x40004000, VENC_GRF_BASE + VENC_GRF_CON1);
+
 	/* Set the emmc to access ddr memory */
 	val = readl(FIREWALL_DDR_BASE + FW_DDR_MST6_REG);
 	writel(val & 0x0000ffff, FIREWALL_DDR_BASE + FW_DDR_MST6_REG);
@@ -475,3 +493,40 @@ int spl_fit_standalone_release(char *id, uintptr_t entry_point)
 }
 #endif
 
+#define CHIP_TYPE_OFF	40
+
+static int fdt_fixup_modules(void *blob)
+{
+	struct udevice *dev;
+	char *compat;
+	u8 chip_type;
+	int ret;
+
+	ret = uclass_get_device_by_driver(UCLASS_MISC,
+					  DM_GET_DRIVER(rockchip_otp), &dev);
+	if (ret) {
+		printf("can't get otp device, ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = misc_read(dev, CHIP_TYPE_OFF, &chip_type, 1);
+	if (ret) {
+		printf("can't read chip type, ret=%d\n", ret);
+		return ret;
+	}
+
+	compat = (char *)fdt_getprop(blob, 0, "compatible", NULL);
+	fdt_setprop_string(blob, 0, "compatible", compat);
+
+	if (chip_type == 0x1)
+		fdt_appendprop_string(blob, 0, "compatible", "rockchip,rk3528");
+	else
+		fdt_appendprop_string(blob, 0, "compatible", "rockchip,rk3528a");
+
+	return 0;
+}
+
+int rk_board_dm_fdt_fixup(const void *blob)
+{
+	return fdt_fixup_modules((void *)blob);
+}
