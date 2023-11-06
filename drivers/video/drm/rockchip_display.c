@@ -905,7 +905,6 @@ static int display_enable(struct display_state *state)
 	struct crtc_state *crtc_state = &state->crtc_state;
 	const struct rockchip_crtc *crtc = crtc_state->crtc;
 	const struct rockchip_crtc_funcs *crtc_funcs = crtc->funcs;
-	int ret = 0;
 	if (!state->is_init)
 		return -EINVAL;
 

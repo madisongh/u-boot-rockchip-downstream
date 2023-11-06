@@ -40,13 +40,15 @@ struct bu18rl82 {
 	const struct panel_desc *desc;
 };
 
-static void bu18rl82_panel_prepare(struct rockchip_panel *panel)
+static int bu18rl82_panel_prepare(struct rockchip_panel *panel)
 {
 	struct bu18rl82 *rl82 = dev_get_priv(panel->dev);
 	const struct panel_desc *desc = rl82->desc;
 
 	if (desc->prepare)
 		desc->prepare(rl82);
+
+	return 0;
 }
 
 static void bu18rl82_panel_unprepare(struct rockchip_panel *panel)
