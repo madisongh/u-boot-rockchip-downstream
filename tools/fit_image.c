@@ -618,17 +618,25 @@ static int fit_import_data(struct image_tool_params *params, const char *fname)
 	for (node = fdt_first_subnode(fdt, images);
 	     node >= 0;
 	     node = fdt_next_subnode(fdt, node)) {
+		void *dataptr = -1;
 		int buf_ptr;
 		int len;
 
-		buf_ptr = fdtdec_get_int(fdt, node, "data-offset", -1);
 		len = fdtdec_get_int(fdt, node, "data-size", -1);
-		if (buf_ptr == -1 || len == -1)
+		if (len == -1)
 			continue;
-		debug("Importing data size %x\n", len);
+		buf_ptr = fdtdec_get_int(fdt, node, "data-position", -1);
+		if (buf_ptr == -1) {
+			buf_ptr = fdtdec_get_int(fdt, node, "data-offset", -1);
+			if (buf_ptr == -1)
+				continue;
+			dataptr = old_fdt + data_base + buf_ptr;
+		} else {
+			dataptr = old_fdt + buf_ptr;
+		}
+		debug("Importing data size %x at 0x%lx\n", len, (long) dataptr);
 
-		ret = fdt_setprop(fdt, node, "data", fdt + data_base + buf_ptr,
-				  len);
+		ret = fdt_setprop(fdt, node, "data", dataptr, len);
 		if (ret) {
 			debug("%s: Failed to write property: %s\n", __func__,
 			      fdt_strerror(ret));
