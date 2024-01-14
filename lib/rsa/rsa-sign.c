@@ -756,7 +756,9 @@ static int rsa_set_key_hash(void *keydest, int key_node,
 	/* hash@c node: n, e, c */
 	c = rsa_key + CONFIG_RSA_N_SIZE + CONFIG_RSA_E_SIZE;
 	rsa_convert_big_endian(c, rsa_c, key_len, CONFIG_RSA_C_SIZE);
-	hash_node = fdt_add_subnode(keydest, key_node, hash_c);
+	hash_node = fdt_subnode_offset(keydest, key_node, hash_c);
+	if (hash_node == -FDT_ERR_NOTFOUND)
+		hash_node = fdt_add_subnode(keydest, key_node, hash_c);
 	if (hash_node < 0)
 		goto err_nospc;
 	ret = calculate_hash(rsa_key, key_len * 3, csum_algo, value, &value_len);
@@ -772,7 +774,9 @@ static int rsa_set_key_hash(void *keydest, int key_node,
 	/* hash@np node: n, e, np */
 	np = rsa_key + CONFIG_RSA_N_SIZE + CONFIG_RSA_E_SIZE;
 	rsa_convert_big_endian(np, rsa_np, key_len, CONFIG_RSA_C_SIZE);
-	hash_node = fdt_add_subnode(keydest, key_node, hash_np);
+	hash_node = fdt_subnode_offset(keydest, key_node, hash_np);
+	if (hash_node == -FDT_ERR_NOTFOUND)
+		hash_node = fdt_add_subnode(keydest, key_node, hash_np);
 	if (hash_node < 0)
 		goto err_nospc;
 
