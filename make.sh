@@ -14,6 +14,8 @@ CMD_ARGS=$1
 RKBIN_TOOLS=../rkbin/tools
 CROSS_COMPILE_ARM32=../prebuilts/gcc/linux-x86/arm/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 CROSS_COMPILE_ARM64=../prebuilts/gcc/linux-x86/aarch64/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+MKIMAGE="${MKIMAGE:-./tools/mkimage}"
+MKIMAGE_SIGN="${MKIMAGE_SIGN:-$MKIMAGE}"
 ########################################### User not touch #############################################
 # Declare global INI file searching index name for every chip, update in select_chip_info()
 RKCHIP=
@@ -504,7 +506,7 @@ function pack_idblock()
 
 	# pack
 	rm idblock.bin -f
-	./tools/mkimage -n ${PLAT} -T rksd -d ${TPL_BIN}:${SPL_BIN} idblock.bin
+	$MKIMAGE -n ${PLAT} -T rksd -d ${TPL_BIN}:${SPL_BIN} idblock.bin
 	echo "Input:"
 	echo "    ${INI}"
 	echo "    ${TPL_BIN}"
@@ -622,11 +624,11 @@ function pack_uboot_itb_image()
 	fi
 
 	if grep -q '^CONFIG_SPL_FIT_SIGNATURE=y' .config ; then
-	    ./tools/mkimage -f u-boot.its -k keys -K spl/u-boot-spl.dtb -E -r u-boot.itb
+	    $MKIMAGE_SIGN -f u-boot.its -k keys -K spl/u-boot-spl.dtb -E -r u-boot.itb
 	    # Reconstruct SPL bin with the updated DTB containing the RSA key info
 	    cat spl/u-boot-spl-nodtb.bin spl/u-boot-spl.dtb > spl/u-boot-spl.bin
 	else
-	    ./tools/mkimage -f u-boot.its -E u-boot.itb
+	    $MKIMAGE -f u-boot.its -E u-boot.itb
 	fi
 	echo "pack u-boot.itb okay! Input: ${INI}"
 	echo
