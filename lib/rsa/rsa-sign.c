@@ -468,6 +468,15 @@ static int rsa_sign_with_key(RSA *rsa, struct padding_algo *padding_algo,
 			ret = rsa_err("Signer padding setup failed");
 			goto err_sign;
 		}
+
+		/*
+		 * Starting with OpenSSL 3.1, the default salt length changed.
+		 * Explicitly specify the old default for compatibility.
+		 */
+		if (EVP_PKEY_CTX_set_rsa_pss_saltlen(ckey, RSA_PSS_SALTLEN_MAX) <= 0) {
+			ret = rsa_err("Signer salt length setup failed");
+			goto err_sign;
+		}
 	}
 #endif /* CONFIG_FIT_ENABLE_RSASSA_PSS_SUPPORT */
 
