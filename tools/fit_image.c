@@ -618,7 +618,7 @@ static int fit_import_data(struct image_tool_params *params, const char *fname)
 	for (node = fdt_first_subnode(fdt, images);
 	     node >= 0;
 	     node = fdt_next_subnode(fdt, node)) {
-		void *dataptr = -1;
+		void *dataptr;
 		int buf_ptr;
 		int len;
 
